@@ -7,6 +7,7 @@ import constants
 from tqdm import tqdm
 from datetime import datetime
 from eth_abi import decode
+from eth_utils import to_normalized_address
 
 # Configuration
 RPC_URL = constants.RPC_URL
@@ -131,7 +132,7 @@ def create_lifetime_table(cursor):
     """Creates a table and saves the lifetime data."""
     cursor.execute('''DROP TABLE IF EXISTS ''' + TABLE_CURR1_CURR2_LIFETIMES)
     cursor.execute('''CREATE TABLE IF NOT EXISTS ''' + TABLE_CURR1_CURR2_LIFETIMES + ''' (
-            position_id TEXT PRIMARY KEY,
+            tqdm_id TEXT PRIMARY KEY,
             pool_id TEXT,
             tick_lower INT, 
             tick_upper INT,
@@ -176,36 +177,43 @@ def sync_liquidity_events(pool_ids, start_block, end_block, chunk_size):
                     print('hex')
                     data_hex = data_hex[2:]
                 # 
-                # Word 0: sender (chars 0-32)
-                # Word 1: tickLower (chars 32-64)
-                # Word 2: tickUpper (chars 64-96)
-                # Word 3: liquidityDelta (chars 96-128)
+                # Word 0: tickLower (chars 32-64)
+                # Word 1: tickUpper (chars 64-96)
+                # Word 2: liquidityDelta (chars 96-128)
                 # Word 3: salt (chars 192-256)
 
                 tick_lower, tick_upper, liquidity_delta, salt = decode_log_data(data_hex)
 
-                sender = w3.to_checksum_address(f"0x{log['topics'][1].hex()[-40:]}")
+                ## Unlike v3, where liquidity was added directly to individual pool contracts, v4 uses a single PoolManager contract. 
+                # Here’s why the sender is the PoolManager:
+                padded_sender_addr = '0x' + str(((log['topics'][2]).hex()).lstrip('0')).lower().strip()
+                # Strip leading zeros
+                sender = padded_sender_addr
             
                 #tick_lower = decode_int24(data_hex[0:64])
                 #tick_upper = decode_int24(data_hex[64:128])
                 #salt = "0x" + data_hex[192:256] # 96 bytes offset = 192 hex chars
                 salt = "0x" + str(salt.hex())
-                positions[salt] = {
-                    "poolId": pid, 
-                    "first_seen": log['blockNumber'],
-                    "tick_lower": tick_lower,
-                    "tick_upper": tick_upper,
-                    "liquidity_delta": liquidity_delta,
-                    "sender": sender
-                }
+                token_id = int(salt, 16)
+                if token_id not in positions:
+                    positions[token_id] = {
+                        "salt": salt,
+                        "poolId": pid, 
+                        "first_seen": log['blockNumber'],
+                        "tick_lower": tick_lower,
+                        "tick_upper": tick_upper,
+                        "liquidity_delta": liquidity_delta,
+                        "sender": sender
+                    }
 
     # 3. Resolve lifetimes for every discovered Position (TokenId)
     print(f"Resolving lifetimes for {len(positions)} unique positions...")
     results = []
-    for tid, data in tqdm(positions.items(), desc="Tracing positions"):
+    for tqdm_id, data in tqdm(positions.items(), desc="Tracing positions"):
         # info contains {'pool_id': ..., 'first_seen': ...}
-        tid_hex = tid.zfill(64)
-        position_id = int(tid_hex, 16)
+        #tid_hex = tid.zfill(64)
+        #tqdm_id = int(tid_hex, 16)
+        pos_id_hex = data['salt'].zfill(64)
         pid = data['poolId']
         tick_upper = data['tick_upper']
         tick_lower = data['tick_lower']
@@ -230,7 +238,7 @@ def sync_liquidity_events(pool_ids, start_block, end_block, chunk_size):
                     "fromBlock": chunk_start,
                     "toBlock": chunk_end,
                     "address": Web3.to_checksum_address(POSITION_MANAGER_ADDR),
-                    "topics": [TRANSFER_SIG, None, None, tid_hex]
+                    "topics": [TRANSFER_SIG, None, None, pos_id_hex]
                 })
                 
                 for t in t_logs:
@@ -238,12 +246,13 @@ def sync_liquidity_events(pool_ids, start_block, end_block, chunk_size):
                     to_addr = "0x" + t['topics'][2].hex()[-40:]
                     if to_addr == ZERO_ADDR:
                         died_block = t['blockNumber']
+                        print(f"Found closed position in block {died_block} with position ID hex {pos_id_hex}")
                         break # Found the death, stop searching chunks
                 
                 if died_block != "Active": break
                 
             except Exception as e:
-                print(f"Transfer scan failed for {tid_hex} at {chunk_start}: {e}")
+                print(f"Transfer scan failed for {pos_id_hex} at {chunk_start}: {e}")
                 continue
 
         # Save to DB (Calculate timestamps only for successful finds to save API calls)
@@ -254,7 +263,7 @@ def sync_liquidity_events(pool_ids, start_block, end_block, chunk_size):
         d_ts_date = datetime.fromtimestamp(d_ts).isoformat()
 
         status = "Closed" if isinstance(died_block, int) else "Active"
-        results.append((str(position_id), pid, tick_lower, tick_upper, liquidity_delta, sender, start_search, str(died_block), b_ts, d_ts, lifetime_blocks, b_ts_date, d_ts_date, status))
+        results.append((str(tqdm_id), pid, tick_lower, tick_upper, liquidity_delta, sender, start_search, str(died_block), b_ts, d_ts, lifetime_blocks, b_ts_date, d_ts_date, status))
     return results
 
 def sync_fees(pool_ids, start_block, end_block, chunk_size):

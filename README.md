@@ -50,7 +50,7 @@ event ModifyLiquidity(PoolId indexed id, address indexed sender, int24 tickLower
 As only the id and sender are indexed, the remaining properties are packed into the data hex string as 32-byte (64 character) words. To extract the tickLower and tickUpper from the ModifyLiquidity event, the data field of the log can be sliced.
 
 <div align="center">
-    <img src="images/lp-sc-2.png" width="400" height="150">
+    <img src="images/lp-sc-2.png" width="600" height="200">
 </div>
 
 The above logs can be viewed in [Etherscan](https://etherscan.io/tx/0xd298c7acdb43bb2fca8981a9e02a277b788eff6d72885842385d4cd74ee7a4e2#eventlog).
@@ -58,7 +58,7 @@ The above logs can be viewed in [Etherscan](https://etherscan.io/tx/0xd298c7acdb
 The swapped tokens can also be found in the transaction logs under token transfers, [an example](https://etherscan.io/tx/0x92cace996e63cef735e9c5e9fbf87711a1d90e5ed9b53cb19b1eca4a6c8acde4) is shown below.
 
 <div align="center">
-    <img src="images/lp-sc-3.png" width="400" height="200">
+    <img src="images/lp-sc-3.png" width="600" height="200">
 </div>
 
 ### Exiting Position
@@ -70,19 +70,19 @@ Transfer(address indexed from, address indexed to, uint256 value)
 The activity is recorded in the normal [transactions logs](https://etherscan.io/txs?block=23815773&sort=desc&p=3) (not internal)
 
 <div align="center">
-    <img src="images/lp-sc-6.png" width="400" height="10">
+    <img src="images/lp-sc-6.png" width="600" height="20">
 </div>
 
 The ERC-721 tokens are transferred to the zero address, as highlighted in the Figure below.
 
 <div align="center">
-    <img src="images/lp-sc-4.png" width="400" height="200">
+    <img src="images/lp-sc-4.png" width="600" height="200">
 </div>
 
 Additionally, the salt associated with the liquidity position, which was generated when the position was created, can be used to differentiate the transactions for "exit" events from other swaps. An example can be found in [these logs](https://etherscan.io/tx/0x633d6bf3fb9330841b032e898e6ca57b8d749834cd3460fa078255464bbe0e6a#eventlog), as also shown in the below Figure.
 
 <div align="center">
-    <img src="images/lp-sc-5.png" width="400" height="90">
+    <img src="images/lp-sc-5.png" width="600" height="200">
 </div>
 
 

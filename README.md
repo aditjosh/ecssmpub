@@ -12,7 +12,7 @@ See Uniswap [pool manager developers' docs](https://developers.uniswap.org/docs/
 A smart contract that serves as the user interface for creating, modifying, and removing liquidity positions. The position manager provides a command-based system to interact with the PoolManager for managing liquidity, token transfers, and NFT minting. Each unique liquidity position as an ERC-721 Non-Fungible Token.
 
 ### Salt
-A salt is an optional paramter used when creating a liquidity position to differentiate positions with the same price range in the same pool. 
+A salt is an optional parameter used when creating a liquidity position to differentiate positions with the same price range in the same pool. 
 
 ### Managing Liquidity
 
@@ -81,7 +81,7 @@ The ERC-721 tokens are transferred to the zero address, as highlighted in the Fi
 Additionally, the salt associated with the liquidity position, which was generated when the position was created, can be used to differentiate the transactions for "exit" events from other swaps. An example can be found in [these logs](https://etherscan.io/tx/0x633d6bf3fb9330841b032e898e6ca57b8d749834cd3460fa078255464bbe0e6a#eventlog), as also shown in the below Figure.
 
 <div align="center">
-    <img src="images/lp-sc-5.png" width="800" height="400">
+    <img src="images/lp-sc-5.png" width="800" height="500">
 </div>
 
 ### Fee Tier
@@ -114,13 +114,18 @@ When the price of tokens in a pool changes relative to when they were deposited,
 * Use correlated asset pairs that move together, reducing the magnitude of price divergence. 
 * Offset the loss by concentrating liquidity within a specific price range, which can increase fee income.
 
-## Research Ideas
+## Research Questions
 
-#### Do liquidity positions containing at least a stablecoin have longer survival times?
+#### Do liquidity positions for token pairs containing at least a stablecoin have longer survival times?
 
 In a stablecoin pair, most liquidity is concentrated around tick 0. Narrow Ranges (e.g., -2 to +2 ticks) earn massive fees but are highly sensitive to "depegs." Wide Ranges (e.g., -100 to +100 ticks) are safer but earn less. By including tick_lower and tick_upper, a Quantile Regressor model can calculate the Range Width:$$Width = tick\_upper - tick\_lower$$ This $Width$ is a powerful feature for the Quantile Regressor. Usually, narrower ranges have shorter survival times because they require active management.
 
-#### How to optimally adjust the concentrated liquidity by predicting price volatility and market sentiment?
+#### How to optimally adjust the concentrated liquidity by predicting price volatility and market sentiment? 
+Steps:
+1. Define how to compute optimally concentrated liquidity.
+2. Predict price volatility using pre-trained model.
+3. Simulate market sentiments: (1) Bearish (2) Moderate (3) Bullish
+4. Analyse whether the the uncertainty lower for pairs with a stablecoin.
 
 ## Prerequisites & Addresses
 

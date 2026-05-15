@@ -116,21 +116,22 @@ When the price of tokens in a pool changes relative to when they were deposited,
 
 ## Research Questions
 
-#### How to optimally adjust the concentrated liquidity positions by predicting price volatility and market sentiment? 
-Steps:
-1. Define how to compute optimally concentrated liquidity positions.
-2. Predict price volatility using pre-trained model.
-3. Simulate market sentiments: (1) Bearish (2) Moderate (3) Bullish
-4. Analyse whether the the uncertainty lower for pairs with a stablecoin.
-
-
-#### Do liquidity positions for token pairs containing at least a stablecoin have longer survival times?
+#### Are the survival times of liquidity positions longer for token pairs containing at least a stablecoin?
 
 In a stablecoin pair, most liquidity is concentrated around tick 0. Narrow Ranges (e.g., -2 to +2 ticks) earn massive fees but are highly sensitive to "depegs." Wide Ranges (e.g., -100 to +100 ticks) are safer but earn less. By including tick_lower and tick_upper, a Quantile Regressor model can calculate the Range Width:
 
 $Width$ = $tick$<sub>upper</sub> - $tick$<sub>lower</sub>
 
 This $Width$ is a powerful feature for the Quantile Regressor. Usually, narrower ranges have shorter survival times because they require active management.
+
+#### How to optimally adjust the concentrated liquidity positions by predicting price volatility, survival times and market sentiment? 
+Steps:
+1. Define how to compute optimally concentrated liquidity positions.
+2. Predict price volatility using pre-trained model.
+3. Simulate market sentiments: (1) Bearish (2) Moderate (3) Bullish
+4. Extend the AMM using hooks.
+4. Interpret the modeling uncertainty for pairs with/without a stablecoin.
+
 
 ## Prerequisites & Addresses
 

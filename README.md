@@ -79,7 +79,7 @@ event Swap(
 The following table shows the swap fees and prices curated from event logs.
 
 <div align="center">
-    <img src="images/lp-sc-swap-table.png" width="800" height="50">
+    <img src="images/lp-sc-swap-table.png" width="800" height="150">
 </div>
 
 The corresponding event log can be viewed in Etherscan as follows:

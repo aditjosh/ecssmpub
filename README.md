@@ -60,6 +60,43 @@ The swapped tokens can also be found in the transaction logs under token transfe
     <img src="images/lp-sc-3.png" width="800" height="400">
 </div>
 
+### Swaps
+
+The Pool Manager contract manages swaps within a liquidity pool. The signature of a SWAP event can be used to extract them from the event logs:
+```
+event Swap(
+        PoolId indexed id,
+        address indexed sender,
+        int128 amount0,
+        int128 amount1,
+        uint160 sqrtPriceX96,
+        uint128 liquidity,
+        int24 tick,
+        uint24 fee
+    );
+```
+
+The following table shows the swap fees and prices curated from event logs.
+
+<div align="center">
+    <img src="images/lp-sc-swap-table.png" width="800" height="50">
+</div>
+
+The corresponding event log can be viewed in Etherscan as follows:
+1. Go to the the spefic block number, e.g. [28077](https://etherscan.io/block/25044314)
+2. Click transactions link.
+2. Locate the transaction.
+
+<div align="center">
+    <img src="images/lp-sc-tx-swap.png" width="800" height="100">
+</div>
+
+3. Find the relevant [event log](https://etherscan.io/tx/0xd03d10d15703a49dfa0e0abecd57dade81a5945954d1e3289e354c21de5efbe5#eventlog) for the swap.
+
+<div align="center">
+    <img src="images/lp-sc-swap.png" width="800" height="400">
+</div>
+
 ### Exiting Position
 
 When exiting a liquidity position, the position manager contract emits a TRANSFER event, which is same as the transfer event associated with ERC-20 token swaps
@@ -124,13 +161,12 @@ $Width$ = $tick$<sub>upper</sub> - $tick$<sub>lower</sub>
 
 This $Width$ is a powerful feature for the Quantile Regressor. Usually, narrower ranges have shorter survival times because they require active management.
 
-#### How to optimally adjust the concentrated liquidity positions by predicting price volatility, survival times and market sentiment? 
+#### How to optimally adjust the dynamic fee of a liquidity position for given token pairs and expected volatility of their prices? 
 Steps:
-1. Define how to compute optimally concentrated liquidity positions.
-2. Predict price volatility using pre-trained model.
-3. Simulate market sentiments: (1) Bearish (2) Moderate (3) Bullish
-4. Extend the AMM using hooks.
-4. Interpret the modeling uncertainty for pairs with/without a stablecoin.
+1. Compute price volatility of the tokens using statistical models.
+2. Determine the optimal dynamic fee to maximize profit.
+3. Implement hooks for fee collection.
+4. Interpret the modeling uncertainty.
 
 
 ## Prerequisites & Addresses

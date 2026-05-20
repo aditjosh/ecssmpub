@@ -83,7 +83,7 @@ The following table shows the swap fees and prices curated from event logs.
 </div>
 
 The corresponding event log can be viewed in Etherscan as follows:
-1. Go to the the spefic block number, e.g. [28077](https://etherscan.io/block/25044314)
+1. Go to the the spefic block number, e.g. [25044314](https://etherscan.io/block/25044314)
 2. Click transactions link.
 2. Locate the transaction.
 

@@ -1,5 +1,27 @@
+# Autonomous LiquidityController for Stablecoin Pools in Uniswap V4
 
-# Liquidity Positions in Uniswap V4
+## Introduction
+Stablecoin pools are popular in DEX because they offer virtually zero rosk of impermanent loss and allow liquidity providers to earn steady fee income for their capital. SCs are heavily used by traders to lock in profits, hedge against market volatility, and facilitate cross-border transactions. This high volume generates steady trading fees.
+
+Due to the large volume of capital supplied to these pools, traders can exchange massive amounts of stablecoins with minimal price impact (slippage). Stablecoin pools (like DAI-USDT or USDC-USDT) are highly resilient to price uncertainty because of how their concentrated liquidity ranges interact with the asset peg. In a volatile, uncorrelated pool (like ETH-USDC), a price swing means one asset is aggressively losing value relative to the other. In a stablecoin pool, the two assets are mathematically bound to the same target value ($1.00). This unique dynamic alters the risk profile for liquidity providers in several fundamental ways.
+
+## Framework
+<div align="center">
+    <img src="images/lpsc_main.png" width="600" height="400">
+</div>
+
+## Research Questions
+1. Are concentrated liquidity pools with stablecoins more resilient to price uncertainty?
+2. What is the expected collaterization in the liquidity pools?
+3. Is it sufficient to avoid liquidity crunch?
+4. Are the survival times of liquidity positions longer for token pairs containing at least a stablecoin?
+
+In a stablecoin pair, most liquidity is concentrated around tick 0. Narrow Ranges (e.g., -2 to +2 ticks) earn massive fees but are highly sensitive to "depegs." Wide Ranges (e.g., -100 to +100 ticks) are safer but earn less. By including tick_lower and tick_upper, a Quantile Regressor model can calculate the Range Width:
+
+$Width$ = $tick$<sub>upper</sub> - $tick$<sub>lower</sub>
+
+This $Width$ is a powerful feature for the Quantile Regressor. Usually, narrower ranges have shorter survival times because they require active management.
+
 ## Concepts
 ### Pool Manager
 The pool manager in Uniswap v4 is a smart contract to facilitate token swaps. It serves as a single entry point for all liquidity pools. The pool manager is a Singleton that encapsulates the state and logic, so there is no need to deploy separate contracts for each liquidity pool.
@@ -151,16 +173,7 @@ When the price of tokens in a pool changes relative to when they were deposited,
 * Use correlated asset pairs that move together, reducing the magnitude of price divergence. 
 * Offset the loss by concentrating liquidity within a specific price range, which can increase fee income.
 
-## Research Questions
-
-#### Are the survival times of liquidity positions longer for token pairs containing at least a stablecoin?
-
-In a stablecoin pair, most liquidity is concentrated around tick 0. Narrow Ranges (e.g., -2 to +2 ticks) earn massive fees but are highly sensitive to "depegs." Wide Ranges (e.g., -100 to +100 ticks) are safer but earn less. By including tick_lower and tick_upper, a Quantile Regressor model can calculate the Range Width:
-
-$Width$ = $tick$<sub>upper</sub> - $tick$<sub>lower</sub>
-
-This $Width$ is a powerful feature for the Quantile Regressor. Usually, narrower ranges have shorter survival times because they require active management.
-
+## LP Strategy
 #### How to optimally adjust the dynamic fee of a liquidity position for given token pairs and expected volatility of their prices? 
 Steps:
 1. Compute price volatility of the tokens using statistical models.

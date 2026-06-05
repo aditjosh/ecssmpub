@@ -1,4 +1,4 @@
-# Autonomous LiquidityController for Stablecoin Pools in Uniswap V4
+# Autonomous Liquidity Controller for Stablecoin Pools in Uniswap V4
 
 ## Introduction
 Stablecoin pools are popular in DEX because they offer virtually zero rosk of impermanent loss and allow liquidity providers to earn steady fee income for their capital. SCs are heavily used by traders to lock in profits, hedge against market volatility, and facilitate cross-border transactions. This high volume generates steady trading fees.
@@ -10,11 +10,13 @@ Due to the large volume of capital supplied to these pools, traders can exchange
     <img src="images/lpsc_main.png" width="600" height="400">
 </div>
 
+## Purpose 
+The framework allows liquidity providers to determine optimal values of Fee Tier, Price Range and Deposit Amounts when providing liquidity to a pair of tokens in a pool. Additionally, the framework estimates the uncertainties associated with the suggested values.
+
 ## Research Questions
 1. Are concentrated liquidity pools with stablecoins more resilient to price uncertainty?
-2. What is the expected collaterization in the liquidity pools?
-3. Is it sufficient to avoid liquidity crunch?
-4. Are the survival times of liquidity positions longer for token pairs containing at least a stablecoin?
+2. What is the expected collaterization in the liquidity pools? Is it sufficient to avoid liquidity crunch?
+3. Are the survival times of liquidity positions longer for token pairs containing at least a stablecoin?
 
 In a stablecoin pair, most liquidity is concentrated around tick 0. Narrow Ranges (e.g., -2 to +2 ticks) earn massive fees but are highly sensitive to "depegs." Wide Ranges (e.g., -100 to +100 ticks) are safer but earn less. By including tick_lower and tick_upper, a Quantile Regressor model can calculate the Range Width:
 

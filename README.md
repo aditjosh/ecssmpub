@@ -1,4 +1,4 @@
-# Uncertainty-Informed Liquidity Controller for Stablecoin Pools in Uniswap V4
+# Uncertainty-Informed Liquidity Manager for Stablecoin Pools in Uniswap V4
 
 ## Introduction
 Stablecoin pools are popular in DEX because they offer virtually zero rosk of impermanent loss and allow liquidity providers to earn steady fee income for their capital. SCs are heavily used by traders to lock in profits, hedge against market volatility, and facilitate cross-border transactions. This high volume generates steady trading fees.
@@ -12,6 +12,17 @@ Due to the large volume of capital supplied to these pools, traders can exchange
 
 ## Purpose 
 The framework allows liquidity providers to determine optimal values of Fee Tier, Price Range and Deposit Amounts when providing liquidity to a pair of tokens in a pool. Additionally, the framework estimates the uncertainties associated with the suggested values.
+
+## Related Work
+1. Improving DeFi Accessibility through Efficient Liquidity Provisioning with Deep Reinforcement Learning <br>
+Summary: Applies deep reinforcement learning (DRL) to optimize liquidity provisioning in Uniswap v3. However, no framework to integrate off-chain and on-chain is described. <br>
+URL: https://arxiv.org/html/2501.07508v1
+2. Don't Let MEV Slip: The Costs of Swapping on the Uniswap Protocol <br>
+Summary: Evaluates the efficiency of trading on DEXs for two pools. <br>
+URL: https://arxiv.org/pdf/2309.13648
+3. UNISWAP: Impermanent Loss and Risk Profile of a Liquidity Provider <br>
+Summary: Description of the impermanent loss function. <br>
+URL: [Cointhinktank](https://cointhinktank.com/upload/crypto/Impermanent%20Loss%20and%20Risk%20Profile%20of%20a%20Liquidity%20Provider.pdf)
 
 ## Research Questions
 1. Are concentrated liquidity pools with stablecoins more resilient to price uncertainty?

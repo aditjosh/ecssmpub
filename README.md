@@ -1,4 +1,4 @@
-# Autonomous Liquidity Controller for Stablecoin Pools in Uniswap V4
+# Uncertainty-Informed Liquidity Controller for Stablecoin Pools in Uniswap V4
 
 ## Introduction
 Stablecoin pools are popular in DEX because they offer virtually zero rosk of impermanent loss and allow liquidity providers to earn steady fee income for their capital. SCs are heavily used by traders to lock in profits, hedge against market volatility, and facilitate cross-border transactions. This high volume generates steady trading fees.

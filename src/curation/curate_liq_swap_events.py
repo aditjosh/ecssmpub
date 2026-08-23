@@ -22,10 +22,10 @@ if not w3.is_connected():
 # Canonical Addresses
 POOL_MANAGER_ADDR = constants.UNI_POOL_MANAGER.lower()
 POSITION_MANAGER_ADDR = constants.UNI_POSITION_MANAGER.lower()
-CURRENCY_1_ADDR = constants.DAI_CONTRACT_ADDR.lower()
-CURRENCY_1_DECIMAL_SCALE = constants.DAI_DECIMAL_SCALE
-CURRENCY_2_ADDR = constants.USDT_CONTRACT_ADDR.lower()
-CURRENCY_2_DECIMAL_SCALE = constants.USDT_DECIMAL_SCALE
+CURRENCY_1_ADDR = constants.WBTC_CONTRACT_ADDR.lower()
+CURRENCY_1_DECIMAL_SCALE = constants.WBTC_DECIMAL_SCALE
+CURRENCY_2_ADDR = constants.USDC_CONTRACT_ADDR.lower()
+CURRENCY_2_DECIMAL_SCALE = constants.USDC_DECIMAL_SCALE
 DSCALE = CURRENCY_1_DECIMAL_SCALE - CURRENCY_2_DECIMAL_SCALE
 C0, C1 = (CURRENCY_1_ADDR, CURRENCY_2_ADDR) if int(CURRENCY_1_ADDR, 16) < int(CURRENCY_2_ADDR, 16) else (CURRENCY_2_ADDR, CURRENCY_1_ADDR)
 
@@ -104,8 +104,8 @@ class DataExtraction:
                 pool_id TEXT,
                 tx_hash TEXT,
                 block_number INTEGER,
+                block_ts_utc TEXT,
                 sender TEXT,
-                recipient TEXT,
                 amount0 TEXT,
                 amount1 TEXT,
                 fee_pips INTEGER,
@@ -163,7 +163,7 @@ class DataExtraction:
         """
         cursor = self.conn.cursor()
         cursor.executemany("""
-            INSERT INTO fee_and_price_history (pool_id, tx_hash, block_number, sender, recipient, amount0,
+            INSERT INTO fee_and_price_history (pool_id, tx_hash, block_number, block_ts_utc, sender, amount0,
                         amount1, fee_pips, sqrt_price_x96, liquidity, tick, gas_fee_wei, gas_fee_eth)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, insert_data)
@@ -259,6 +259,7 @@ def curate_fees_and_prices(data_extractor, pool_id, start_block, end_block, chun
     (2) Tracks Static and Dynamic Fees along with pool prices from Swap logs
     """
     fee_timeline = []
+    blocks_with_swaps = {}
     for current_start in tqdm(range(start_block, end_block, chunk_size), desc=f"Scanning fees and prices for pool id: {pool_id}"):
         current_end = min(current_start + chunk_size, end_block)
 
@@ -284,6 +285,9 @@ def curate_fees_and_prices(data_extractor, pool_id, start_block, end_block, chun
                     args = decoded_log['args']
                     #sender = args['sender'] if 'sender' in args else None
                     block_number = decoded_log['blockNumber']
+                    block_ts = log['blockTimestamp']
+                    timestamp_int = int(block_ts, 16)
+                    block_ts_utc = datetime.datetime.fromtimestamp(timestamp_int, datetime.UTC).isoformat()
                     # The 24th bit flags dynamic behavior, mask it to get the active fee
                     current_fee = args['fee'] & 0x7FFFFF
 
@@ -302,8 +306,8 @@ def curate_fees_and_prices(data_extractor, pool_id, start_block, end_block, chun
                     gas_fee_wei = gas_used * gas_price_wei
                     gas_fee_eth = Web3.from_wei(gas_fee_wei, 'ether')
 
-                    sender = "0x" + str(log['topics'][1].hex()[-40:])
-                    recipient = "0x" + str(log['topics'][2].hex()[-40:])
+                    ##sender = "0x" + str(log['topics'][1].hex()[-40:])    # remove this (it's just a truncated pool id)
+                    sender = "0x" + str(log['topics'][2].hex()[-40:]) # This is the sender
 
                     # Decode un-indexed parameters
                     # Non-indexed parameter types to pass to Web3.py
@@ -326,10 +330,10 @@ def curate_fees_and_prices(data_extractor, pool_id, start_block, end_block, chun
                     #print(f"Found decoded log for pool id: {pool_id}")
                     fee_timeline.append((
                         pool_id,  # 0
-                        tx_hash,
+                        "0x" + tx_hash,
                         block_number,  # 2
+                        block_ts_utc,
                         sender,
-                        recipient,
                         str(amount0),
                         str(amount1),
                         current_fee,
@@ -342,6 +346,8 @@ def curate_fees_and_prices(data_extractor, pool_id, start_block, end_block, chun
                         #str(manager_sqrt_price),
                         #manager_tick
                     ))
+                    if str(block_number) not in blocks_with_swaps:
+                        blocks_with_swaps[str(block_number)] = str(sqrtPriceX96)
         except Exception as e:
                 print(f"\ncurate_fees_and_prices: Timeout or error at block {current_start}: {e}. Retrying with a pause...")
                 # If a specific chunk fails, you could recursively call this with chunk_size // 2
@@ -353,14 +359,14 @@ def curate_fees_and_prices(data_extractor, pool_id, start_block, end_block, chun
         print(f"Processed {len(fee_timeline)} swap/fee entries in pool id: {pool_id}")
     else:
         print(f"No swap/fee entries in pool id: {pool_id}")
-    return fee_timeline
+    return fee_timeline, blocks_with_swaps
 
-def curate_positions_and_amounts(data_extractor, pool_id, latest_price, start_block, end_block, chunk_size=50000):
+def curate_positions_and_amounts(data_extractor, pool_id, start_block, end_block, blocks_with_swaps, chunk_size=50000):
     """
     (1) & (3) Tracks individual liquidity positions and computes token values
     """
-    pos_amounts = []
     #print("Curating liquidity positions and calculating active balances...")
+    pos_amounts = []
     for current_start in tqdm(range(start_block, end_block, chunk_size), desc="Curating positions and amounts"):
         current_end = min(current_start + chunk_size, end_block)
 
@@ -419,7 +425,13 @@ def curate_positions_and_amounts(data_extractor, pool_id, latest_price, start_bl
             #manager_tick = slot0[1]
 
             # Compute underlying token balances
-            curr1_bal, curr2_bal = calculate_amounts(float(latest_price), tick_l, tick_u, active_liq)
+            if str(block_number) in blocks_with_swaps:
+                sqrt_price = blocks_with_swaps[str(block_number)]
+                curr1_bal, curr2_bal = calculate_amounts(float(sqrt_price), tick_l, tick_u, active_liq)
+            else:
+                sqrt_price = None
+                curr1_bal = None
+                curr2_bal = None
 
             # === Fetch Transaction Receipt for Gas Info ===
             receipt = w3.eth.get_transaction_receipt(tx_hash)
@@ -438,7 +450,7 @@ def curate_positions_and_amounts(data_extractor, pool_id, latest_price, start_bl
             pos_amounts.append((
                 pool_id,
                 owner,
-                tx_hash,
+                "0x" + tx_hash,
                 block_number, 
                 block_ts,
                 block_ts_utc,
@@ -449,13 +461,14 @@ def curate_positions_and_amounts(data_extractor, pool_id, latest_price, start_bl
                 curr2_bal,
                 str(gas_fee_wei),
                 str(gas_fee_eth),
-                str(latest_price),
+                str(sqrt_price),
                 #str(active_liquidity) if active_liquidity is not None else None,
                 #str(manager_sqrt_price),
                 #manager_tick
             ))
         
-    data_extractor.save_positions_and_amounts(pos_amounts)
+    if len(pos_amounts) > 0:
+        data_extractor.save_positions_and_amounts(pos_amounts)
 
 def curate_positions_and_amounts_at_block(data_extractor, pool_id, block_number, latest_price):
     """
@@ -537,7 +550,7 @@ def curate_positions_and_amounts_at_block(data_extractor, pool_id, block_number,
         pos_amounts.append((
             pool_id,
             owner,
-            tx_hash,
+            "0x" + tx_hash,
             block_number, 
             block_ts,
             block_ts_utc,
@@ -859,18 +872,19 @@ def curate_positions(from_block, to_block, curr1_str, curr2_str, pool_id = None,
             pool_id = pool[0]
 
             # Gather Fee Configurations & Timeline
-            swap_data = curate_fees_and_prices(data_extractor, pool_id, start_block=START_BLOCK, end_block=END_BLOCK, chunk_size=1000)
+            swap_data, blocks_with_swaps = curate_fees_and_prices(data_extractor, pool_id, start_block=START_BLOCK, end_block=END_BLOCK, chunk_size=1000)
             
             # Extract modify liquidity events from the blocks corresponding to the swap events
-            for swap in swap_data:
-                block_number = swap[2]
-                current_sqrt_price = swap[8]  # fallback template
+            #for swap in swap_data:
+            #    block_number = swap[2]
+            #    current_sqrt_price = swap[8]  # fallback template
             
                 # Track Active Positions & calculate token allocations
-                positions = curate_positions_and_amounts_at_block(data_extractor, pool_id, block_number=block_number, latest_price=current_sqrt_price)
+            #    positions = curate_positions_and_amounts_at_block(data_extractor, pool_id, block_number=block_number, latest_price=current_sqrt_price)
         
             # Extract all modify liquidity events in the block range
-            #positions = curate_positions_and_amounts(data_extractor, pool_id, start_block=START_BLOCK, end_block=END_BLOCK, chunk_size=1000)
+            curate_positions_and_amounts(data_extractor, pool_id, start_block=START_BLOCK, end_block=END_BLOCK, blocks_with_swaps=blocks_with_swaps, chunk_size=1000)
+        
         print("\nPipeline Execution Finished successfully.")
             
     except Exception as e:
@@ -901,7 +915,6 @@ def curate_pool_ids(from_block, to_block, curr1_str, curr2_str, chunk_size=1000)
         print(f"curate_pool_ids: Error executing data extraction: {e}")
     finally:
         data_extractor.close()
-
 
 def decode_ticks_liquidity():
     ##pool_id = "0xf6e8088529094bc485561fa2a03e3d19c9a60f5d99a997e8fe16ab4ca2db277a"   #### works!
@@ -973,16 +986,25 @@ if __name__ == "__main__":
     # 21835360: 450 days ago
     # 21191360: 540 days ago
 
-    to_block = 21835360 - 1
-    from_block = 21191360
+    to_block = 22480360 - 1
+    from_block = 21835360
     #removal_tx = find_liquidity_removal_time(pool_id, from_block, to_block)
     #print(f"Liquidity removal transaction: {removal_tx}")
     ##active_positions = get_liquidity_providers(pool_id, from_block, to_block, chunk_size=2000)
 
     ## Curate liquidity ticks, swaps, etc.
-    curr1_str = "dai" 
-    curr2_str = "usdt"
-    curate_positions(from_block, to_block, curr1_str, curr2_str, pool_ids_db_file = f"sqldb/dai_usdt/pool_ids_univ4_dai_usdt_21191360_to_25044360.db")
+    curr1_str = "wbtc" 
+    curr2_str = "usdc"
+    tag = curr1_str + "_" +  curr2_str
+    ##curate_positions(from_block, to_block, curr1_str, curr2_str, pool_ids_db_file = f"sqldb/{tag}/pool_ids_univ4_{tag}_21191360_to_25044360.db")
+
+
+    ## Loop over to extract all data
+    to_blocks = [23120359, 23760359, 24430359, 25044360]
+    from_blocks = [22480360, 23120360, 23760360, 24430360]
+    for i in range(len(to_blocks)):
+        curate_positions(from_blocks[i], to_blocks[i], curr1_str, curr2_str, pool_ids_db_file = f"sqldb/{tag}/pool_ids_univ4_{tag}_21191360_to_25044360.db")
+        time.sleep(120)
 
     
     #pool_id = "0xf6e8088529094bc485561fa2a03e3d19c9a60f5d99a997e8fe16ab4ca2db277a"
@@ -990,4 +1012,4 @@ if __name__ == "__main__":
     
 
     ## Curate pool ids only
-    ##curate_pool_ids(from_block, to_block, curr1_str, curr2_str, chunk_size=2000)
+    #curate_pool_ids(from_block, to_block, curr1_str, curr2_str, chunk_size=2000)

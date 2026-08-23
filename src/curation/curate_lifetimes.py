@@ -2,12 +2,11 @@ from web3 import Web3
 import json
 import sqlite3
 import time
-from datetime import datetime
 import constants
 from tqdm import tqdm
-from datetime import datetime
 from eth_abi import decode
 from eth_utils import to_normalized_address
+import datetime
 
 # Configuration
 RPC_URL = constants.RPC_URL
@@ -18,9 +17,9 @@ POSITION_MANAGER_ADDR = constants.UNI_POSITION_MANAGER.lower()
 UNI_V4_START_BLOCK = constants.UNI_V4_START_BLOCK
 #START_BLOCK = 24693836
 
-CURRENCY_1_ADDR = constants.DAI_CONTRACT_ADDR.lower()
-CURRENCY_2_ADDR = constants.USDT_CONTRACT_ADDR.lower()
-curr1_curr2 = "dai_usdt"
+CURRENCY_1_ADDR = constants.WBTC_CONTRACT_ADDR.lower()
+CURRENCY_2_ADDR = constants.USDC_CONTRACT_ADDR.lower()
+curr1_curr2 = "wbtc_usdc"
 
 # Event Topics
 INIT_SIG = w3.keccak(text="Initialize(bytes32,address,address,uint24,int24,address)").to_0x_hex()
@@ -133,6 +132,7 @@ def create_lifetime_table(cursor):
     cursor.execute('''DROP TABLE IF EXISTS ''' + TABLE_CURR1_CURR2_LIFETIMES)
     cursor.execute('''CREATE TABLE IF NOT EXISTS ''' + TABLE_CURR1_CURR2_LIFETIMES + ''' (
             tqdm_id TEXT PRIMARY KEY,
+            pos_id_hex TEXT,
             pool_id TEXT,
             tick_lower INT, 
             tick_upper INT,
@@ -259,11 +259,13 @@ def sync_liquidity_events(pool_ids, start_block, end_block, chunk_size):
         b_ts = get_timestamp(start_search)
         d_ts = get_timestamp(died_block) if isinstance(died_block, int) else int(time.time())
         lifetime_blocks = (d_ts - b_ts) if isinstance(d_ts, int) else "N/A"
-        b_ts_date = datetime.fromtimestamp(b_ts).isoformat()
-        d_ts_date = datetime.fromtimestamp(d_ts).isoformat()
+        #b_ts_date = datetime.datetime.utcfromtimestamp(b_ts).isoformat()
+        b_ts_date = datetime.datetime.fromtimestamp(b_ts, datetime.UTC).isoformat()
+        #d_ts_date = datetime.datetime.utcfromtimestamp(d_ts).isoformat()
+        d_ts_date = datetime.datetime.fromtimestamp(d_ts, datetime.UTC).isoformat()
 
         status = "Closed" if isinstance(died_block, int) else "Active"
-        results.append((str(tqdm_id), pid, tick_lower, tick_upper, liquidity_delta, sender, start_search, str(died_block), b_ts, d_ts, lifetime_blocks, b_ts_date, d_ts_date, status))
+        results.append((str(tqdm_id), pos_id_hex, pid, tick_lower, tick_upper, liquidity_delta, sender, start_search, str(died_block), b_ts, d_ts, lifetime_blocks, b_ts_date, d_ts_date, status))
     return results
 
 def sync_fees(pool_ids, start_block, end_block, chunk_size):
@@ -301,7 +303,7 @@ def process_block_range(db_name, start_block, end_block, pool_ids, chunk_size=20
     cursor = create_table_historical_swap_fee(cursor)
    
     # 4. Save to Database
-    cursor.executemany('INSERT INTO ' + TABLE_CURR1_CURR2_LIFETIMES + ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', liquidity_events)
+    cursor.executemany('INSERT INTO ' + TABLE_CURR1_CURR2_LIFETIMES + ' VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', liquidity_events)
     cursor.executemany('INSERT OR IGNORE INTO ' + TABLE_CURR1_CURR2_V4_POOL_FEES + ' VALUES (?, ?, ?, ?)', historical_fees)
     conn.commit()
     conn.close()
@@ -348,11 +350,11 @@ def topic_debugger(w3):
 
 
 if __name__ == "__main__":
-    last_n_days = 180
+    ##last_n_days = 180
     
     w3 = Web3(Web3.HTTPProvider(constants.RPC_URL))
     topic_debugger(w3)
-    latest_block =  24430360 - 1  # 24695825. w3.eth.block_number
+    latest_block =  25044360  # 24695825. w3.eth.block_number
 
     # 25044360: considered latest
     # 24430360: 87 days ago
@@ -361,23 +363,33 @@ if __name__ == "__main__":
     # 22480360: 360 days ago
     # 21835360: 450 days ago
     # 21191360: 540 days ago
-    past_block = 23760360
+    past_block = 21191360
     #past_block = latest_block - (last_n_days * 7100)
     #past_block = latest_block - 20000
     print(f"Latest block is {latest_block}")
-
     db_name = f'sqldb/{curr1_curr2}/sql_univ4_{curr1_curr2}_{past_block}_to_{latest_block}.db'
-    db_conn = setup_db(db_name)
     
     heath_check(w3, past_block)
 
     # Discover all pools in safe increments
-    sync_currency_swap_liq_pools(db_conn, latest_block, chunk_size=2000)
+    ###sync_currency_swap_liq_pools(db_conn, latest_block, chunk_size=2000)
+    
+    
+    # Pool IDs
+    # Option 1: Fetch the PoolIds from the DB to proceed with position tracking
+    #db_conn = setup_db(db_name)
+    #cursor = db_conn.cursor()
+    #cursor.execute('SELECT pool_id FROM ' + TABLE_CURR1_CURR2_V4_POOLS)
 
-    # Now fetch the PoolIds from the DB to proceed with position tracking
+    # Option 1: Fetch the PoolIds from the separate DB
+    pool_db_name = f'sqldb/{curr1_curr2}/pool_ids_univ4_{curr1_curr2}_21191360_to_25044360.db'
+    db_conn = setup_db(pool_db_name)
     cursor = db_conn.cursor()
-    cursor.execute('SELECT pool_id FROM ' + TABLE_CURR1_CURR2_V4_POOLS)
+    cursor.execute('SELECT pool_id FROM pools')
     all_pool_ids = [row[0] for row in cursor.fetchall()]
     print(f"Found {len(all_pool_ids)} pools to monitor.")
+    cursor.close()
+    db_conn.close()
 
-    process_block_range(db_name, past_block, latest_block, all_pool_ids, chunk_size=500)
+
+    #process_block_range(db_name, past_block, latest_block, all_pool_ids, chunk_size=1000)

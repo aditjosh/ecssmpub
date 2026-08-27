@@ -17,9 +17,9 @@ POSITION_MANAGER_ADDR = constants.UNI_POSITION_MANAGER.lower()
 UNI_V4_START_BLOCK = constants.UNI_V4_START_BLOCK
 #START_BLOCK = 24693836
 
-CURRENCY_1_ADDR = constants.WBTC_CONTRACT_ADDR.lower()
-CURRENCY_2_ADDR = constants.USDC_CONTRACT_ADDR.lower()
-curr1_curr2 = "wbtc_usdc"
+CURRENCY_1_ADDR = constants.WETH_CONTRACT_ADDR.lower()
+CURRENCY_2_ADDR = constants.USDT_CONTRACT_ADDR.lower()
+curr1_curr2 = "eth_usdt"
 
 # Event Topics
 INIT_SIG = w3.keccak(text="Initialize(bytes32,address,address,uint24,int24,address)").to_0x_hex()
@@ -391,5 +391,12 @@ if __name__ == "__main__":
     cursor.close()
     db_conn.close()
 
-
     #process_block_range(db_name, past_block, latest_block, all_pool_ids, chunk_size=1000)
+
+    ## Loop over to extract all data
+    to_blocks = [21835359, 22480359, 23120359, 23760359, 24430359, 25044360]
+    from_blocks = [21191360, 21835360, 22480360, 23120360, 23760360, 24430360]
+    for i in range(len(to_blocks)):
+        db_name = f'sqldb/{curr1_curr2}/sql_univ4_{curr1_curr2}_{from_blocks[i]}_to_{to_blocks[i]}.db'
+        process_block_range(db_name, from_blocks[i], to_blocks[i], all_pool_ids, chunk_size=2000)
+        time.sleep(120)

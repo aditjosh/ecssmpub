@@ -43,11 +43,14 @@ def tick_to_price(tick):
     return (1.0001 ** tick)
 
 def calculate_amounts(sqrt_price_x96, tick_lower, tick_upper, liquidity):
+    if tick_lower >= tick_upper:
+        raise ValueError("tick_lower must be < tick_upper")
+
     sqrt_p = sqrt_price_x96 / (2 ** 96)
     sqrt_p_l = math.sqrt(tick_to_price(tick_lower))
     sqrt_p_u = math.sqrt(tick_to_price(tick_upper))
     
-    if liquidity == 0:
+    if liquidity <= 0:
         return 0.0, 0.0
 
     if sqrt_p < sqrt_p_l:

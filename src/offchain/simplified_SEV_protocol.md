@@ -1,4 +1,4 @@
-### [draft-subsection] Off-Chain Safety Verification for Hook Computation
+### Off-Chain Safety Verification for Hook Computation
 
 Autonomous liquidity hooks that ingest off-chain intelligence (e.g., volatility forecasts, optimal tick ranges) conventionally rely on zero-knowledge coprocessors such as Brevis to attest to computational integrity. In this paradigm, the off-chain prover flattens machine-learning inference or statistical aggregation into an arithmetic circuit, generates a succinct proof, and submits the result on-chain for pairing-based verification. While this guarantees correct execution of the off-chain trace, it imposes substantial overhead: circuit compilation, trusted setup, proof generation latency, and non-trivial verification gas. For hooks whose primary requirement is to ensure that submitted parameters are *safe* rather than *mathematically optimal*, this full pipeline is unnecessarily heavyweight.
 

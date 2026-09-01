@@ -1,17 +1,47 @@
-# Uncertainty-Informed Liquidity Manager for Stablecoin Pools in Uniswap V4
+# Forecasting Volatility and Change in Price for Uniswap v4 Liquidity Positioning
+
+## Purpose 
+A framework to allow liquidity providers to determine optimal values of fee tier, price range and deposit amounts when providing liquidity to a pair of tokens in a pool. Additionally, the framework helps estimate the uncertainties about model's ignorance.
 
 ## Introduction
-Stablecoin pools are popular in DEX because they offer virtually zero rosk of impermanent loss and allow liquidity providers to earn steady fee income for their capital. SCs are heavily used by traders to lock in profits, hedge against market volatility, and facilitate cross-border transactions. This high volume generates steady trading fees.
+Liquidity positioning in a decentralized Automated Market Maker (AMM) involves allocating cryptocurrency token pairs
+in liquidity pools. In the Uniswap v4 AMM, the liquidity providers (LPs) can earn a percentage fee, called a fee tier,
+on every token swap in their pool. The fee tier is specified when creating a new pool, and the number of fee tiers
+is unlimited. Additionally, the LPs can concentrate, or position, their liquidity in the anticipated price intervals.
 
-Due to the large volume of capital supplied to these pools, traders can exchange massive amounts of stablecoins with minimal price impact (slippage). Stablecoin pools (like DAI-USDT or USDC-USDT) are highly resilient to price uncertainty because of how their concentrated liquidity ranges interact with the asset peg. In a volatile, uncorrelated pool (like ETH-USDC), a price swing means one asset is aggressively losing value relative to the other. In a stablecoin pool, the two assets are mathematically bound to the same target value ($1.00). This unique dynamic alters the risk profile for liquidity providers in several fundamental ways.
+Currently, LPs optimize their earning strategies over a short time horizon based on estimated price volatility, often incorporating additional signals such as market sentiment, price trends, price momentum, and trading volume. Several computational models in the FinTech domain are foundational to this approach. Moreover, in decentralized finance,
+machine learning (ML) and deep learning (DL) are widely adopted for algorithmic liquidity positioning.
 
 ## Framework
 <div align="center">
     <img src="images/lpsc_main.png" width="600" height="400">
 </div>
 
-## Purpose 
-The framework allows liquidity providers to determine optimal values of Fee Tier, Price Range and Deposit Amounts when providing liquidity to a pair of tokens in a pool. Additionally, the framework estimates the uncertainties associated with the suggested values.
+## Code Layout
+project_root/
+├── src/
+│   ├── analysis/
+│   │   ├─ Scripts for analysis of curated data
+│   ├── curation/
+│   │   ├─ Scripts to curate blockchain data using web3
+│   │   ├─ README.md
+│   ├── model/
+│   │   ├── regression/
+│   │   │   ├─ EC_SSM model and loss functions
+│   ├── training/
+│   │   ├─ Model training and datasets setup
+│   ├── offchain/
+│   │   ├─ Description of off-chain integration protocol
+├── images/
+├── .gitignore
+└── README.md
+
+
+## Concentrated Liquidity in Uniswap
+The token amounts, price and liquidity are related as follows:
+$$
+x = \frac{L}{\sqrt{\pi}} \quad \quad y = L \sqrt{\pi}
+$$
 
 ## Related Work
 1. Improving DeFi Accessibility through Efficient Liquidity Provisioning with Deep Reinforcement Learning <br>
@@ -24,18 +54,7 @@ URL: https://arxiv.org/pdf/2309.13648
 Summary: Description of the impermanent loss function. <br>
 URL: [Cointhinktank](https://cointhinktank.com/upload/crypto/Impermanent%20Loss%20and%20Risk%20Profile%20of%20a%20Liquidity%20Provider.pdf)
 
-## Research Questions
-1. Are concentrated liquidity pools with stablecoins more resilient to price uncertainty?
-2. What is the expected collaterization in the liquidity pools? Is it sufficient to avoid liquidity crunch?
-3. Are the survival times of liquidity positions longer for token pairs containing at least a stablecoin?
-
-In a stablecoin pair, most liquidity is concentrated around tick 0. Narrow Ranges (e.g., -2 to +2 ticks) earn massive fees but are highly sensitive to "depegs." Wide Ranges (e.g., -100 to +100 ticks) are safer but earn less. By including tick_lower and tick_upper, a Quantile Regressor model can calculate the Range Width:
-
-$Width$ = $tick$<sub>upper</sub> - $tick$<sub>lower</sub>
-
-This $Width$ is a powerful feature for the Quantile Regressor. Usually, narrower ranges have shorter survival times because they require active management.
-
-## Concepts
+## Uniswap v4 Concepts
 ### Pool Manager
 The pool manager in Uniswap v4 is a smart contract to facilitate token swaps. It serves as a single entry point for all liquidity pools. The pool manager is a Singleton that encapsulates the state and logic, so there is no need to deploy separate contracts for each liquidity pool.
 
@@ -60,7 +79,7 @@ The lifecycle of liquidity position consists of:
     i. Burn operation: to clear a position entirely and wothdraw funds.
     ii. Take pair: to send withdrawn funds to the recipient. 
 
-## Extracting lifetimes of LPs from event logs
+## Curation of lifetimes of LPs from event logs
 Extracting the lifetime of positions in Uniswap v4 from an archive node involves a three-step cross-reference of event logs:
 
 1. **Find all Pools**: Identify all currency1-currency2 pool instances (different fees/hooks).

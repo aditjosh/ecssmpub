@@ -31,7 +31,6 @@ machine learning (ML) and deep learning (DL) are widely adopted for algorithmic 
   * .gitignore
   * README.md
 
-
 ## Concentrated Liquidity in Uniswap
 The token amounts, price and liquidity are related as follows:
 $$

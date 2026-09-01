@@ -12,6 +12,13 @@ is unlimited. Additionally, the LPs can concentrate, or position, their liquidit
 Currently, LPs optimize their earning strategies over a short time horizon based on estimated price volatility, often incorporating additional signals such as market sentiment, price trends, price momentum, and trading volume. Several computational models in the FinTech domain are foundational to this approach. Moreover, in decentralized finance,
 machine learning (ML) and deep learning (DL) are widely adopted for algorithmic liquidity positioning.
 
+## Concentrated Liquidity in Uniswap
+The token amounts, price and liquidity are related as follows:
+
+$$
+x = \frac{L}{\sqrt{\pi}} \quad \quad y = L \sqrt{\pi}
+$$
+
 ## Framework
 <div align="center">
     <img src="images/lpsc_main.png" width="600" height="400">
@@ -30,12 +37,6 @@ machine learning (ML) and deep learning (DL) are widely adopted for algorithmic 
   * images/
   * .gitignore
   * README.md
-
-## Concentrated Liquidity in Uniswap
-The token amounts, price and liquidity are related as follows:
-$$
-x = \frac{L}{\sqrt{\pi}} \quad \quad y = L \sqrt{\pi}
-$$
 
 ## Related Work
 1. Improving DeFi Accessibility through Efficient Liquidity Provisioning with Deep Reinforcement Learning <br>

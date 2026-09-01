@@ -18,23 +18,18 @@ machine learning (ML) and deep learning (DL) are widely adopted for algorithmic 
 </div>
 
 ## Code Layout
-project_root/
-├── src/
-│   ├── analysis/
-│   │   ├─ Scripts for analysis of curated data
-│   ├── curation/
-│   │   ├─ Scripts to curate blockchain data using web3
-│   │   ├─ README.md
-│   ├── model/
-│   │   ├── regression/
-│   │   │   ├─ EC_SSM model and loss functions
-│   ├── training/
-│   │   ├─ Model training and datasets setup
-│   ├── offchain/
-│   │   ├─ Description of off-chain integration protocol
-├── images/
-├── .gitignore
-└── README.md
+* project_root/
+  * src/
+    * analysis/ (Scripts for analysis of curated data)
+    * curation/ (Scripts to curate blockchain data using web3)
+      * README.md
+    * model/
+      * regression/ (EC_SSM model and loss functions)
+    * training/ (Model training and datasets setup)
+    * offchain/ (Description of off-chain integration protocol)
+  * images/
+  * .gitignore
+  * README.md
 
 
 ## Concentrated Liquidity in Uniswap

@@ -1,13 +1,21 @@
 # Data Curation
 Curating raw telemetry for a specific Uniswap v4 pool from an Ethereum archive node requires interacting with the v4 Singleton architecture. Unlike v3, where every pool is a separate contract, all Uniswap v4 pools reside inside a single contract: the PoolManager (deployed on Ethereum Mainnet at 0x000000000004444c5dc75cb358380d2e3de08a90).
 
-To filter data specifically for the DAI-USDT pair, you must first canonically sort the token addresses to identify which is currency0 and which is currency1:
+To filter data specifically for the USDC-WETH pair, you must first canonically sort the token addresses to identify which is currency0 and which is currency1:
 
-DAI: 0x6B175474E89094C44Da98b954EedeAC495271d0F
+USDC: 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48
 
 USDT: 0xdAC17F958D2ee523a2206206994597C13D831ec7
 
-Since 0x6B17... is numerically less than 0xdAC1..., DAI is currency0 and USDT is currency1.
+WBTC: 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599
+
+WETH: 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+
+Since 0xA0b... is numerically less than 0xC02a..., USDC is currency0 and WETH is currency1.
+
+## Curated Dataset
+
+The curated dataset is available on Zenodo: [Public URL](https://zenodo.org/records/22230321?preview=1&token=eyJhbGciOiJIUzUxMiIsImlhdCI6MTc4ODUyNTkzNiwiZXhwIjoxODA5MTI5NTk5fQ.eyJpZCI6Ijc5ODkwODM1LWMyZTItNDkwMS04NmY2LTI2OTQ5NjQ3YTcwMCIsImRhdGEiOnt9LCJyYW5kb20iOiI1YmEzZmJhZGE1OWQ4YjNhNjg5NmI4ZTllZjA4YmQzMCJ9.7BvYmSTc-cwQCB_QmgEw5MaznAe4Sme-mqAGSoqBAV3x1LvcIDICaOv9aLD7TjZUIHZPNqeU5SX-yBPUNJzlNA)
 
 ## Pool ID
 A pool's definitive identity in Uniswap v4 is its PoolId (a bytes32 hash). It is derive by matching the exact configuration parameters inside the PoolKey struct and hashing them:
@@ -26,7 +34,7 @@ Query logs from the PoolManager using the topic signature for liquidity modifica
 
 Topic 0 (Event Signature): ModifyLiquidity(bytes32,address,int24,int24,int256,bytes32)$$\to \text{0x23f7d159... (hash of signature)}$$
 
-Topic 1 (Indexed PoolId): The target DAI-USDT PoolId.
+Topic 1 (Indexed PoolId): The target currency0-currency1 PoolId.
 
 ### Resolve the Actual User Wallet
 
@@ -59,19 +67,20 @@ The raw token balances of a position cannot be read directly from standard logs;
 For a given position identifier (composed of owner, tickLower, tickUpper, and salt), parse all historical ModifyLiquidity logs up to your target block height $B$. Maintain a running sum of the liquidityDelta parameter to determine the active net liquidity ($L$) at that block.
 
 ### Fetch the Active Price
-Find the most recent Swap or Initialize log up to block $B$. Read the uint160 sqrtPriceX96 parameter. This represents the current global asset price of the pool:$$\sqrt{P} = \frac{\text{sqrtPriceX96}}{2^{96}}$$
+Find the most recent Swap or Initialize log up to block $B$. Read the uint160 sqrtPriceX96 parameter. This represents the current global asset price of the pool: $$\sqrt{P} = \frac{\text{sqrtPriceX96}}{2^{96}}$$
 
 ### Calculate Token Inventories
 
-Convert the tickLower and tickUpper integers into their geometric price representations, where $\sqrt{P_l} = \sqrt{1.0001^{\text{tickLower}}}$ and $\sqrt{P_u} = \sqrt{1.0001^{\text{tickUpper}}}$.
+Convert the tickLower and tickUpper integers into their geometric price representations, where $$\sqrt{P_l} = \sqrt{1.0001^{\text{tickLower}}}$$ and $$\sqrt{P_u} = \sqrt{1.0001^{\text{tickUpper}}}$$.
 
-Apply the following conditional math checks depending on where the pool's current active price $\sqrt{P}$ sits relative to the position's bounds:
+Apply the following conditional math checks depending on where the pool's current active price $$\sqrt{P}$$ sits relative to the position's bounds:
 
-- Case 1: Price is below the range ($\sqrt{P} < \sqrt{P_l}$)The position is composed entirely of currency0 (DAI):$$\text{Amount}_{\text{DAI}} = L \cdot \left( \frac{1}{\sqrt{P_l}} - \frac{1}{\sqrt{P_u}} \right), \quad \text{Amount}_{\text{USDT}} = 0$$
-- Case 2: Price is above the range ($\sqrt{P} > \sqrt{P_u}$)The position is composed entirely of currency1 (USDT):$$\text{Amount}_{\text{DAI}} = 0, \quad \text{Amount}_{\text{USDT}} = L \cdot (\sqrt{P_u} - \sqrt{P_l})$$
-- Case 3: Price is inside the range ($\sqrt{P_l} \le \sqrt{P} \le \sqrt{P_u}$)
+- Case 1: Price is below the range ($$\sqrt{P} < \sqrt{P_l}$$)The position is composed entirely of currency0: $$\text{Amount}_{\text{currency0}} = 0, \quad \text{Amount}\_{\text{currency1}} = L \cdot \left( \frac{1}{\sqrt{P_l}} \right), \quad \text{Amount}\_{\text{USDT}} = 0$$
+  
+- Case 2: Price is above the range ($$\sqrt{P} > \sqrt{P_u}$$). The position is composed entirely of currency1: $$\text{Amount}\_{\text{currency0}} = 0, \quad \text{Amount}_{\text{currency1}} = L \cdot (\sqrt{P_u} - \sqrt{P_l})$$
+- Case 3: Price is inside the range ($$\sqrt{P_l} \le \sqrt{P} \le \sqrt{P_u}$$)
 
 The position holds a mix of both assets:
 
-$$\text{Amount}_{\text{DAI}} = L \cdot \left( \frac{1}{\sqrt{P}} - \frac{1}{\sqrt{P_u}} \right)$$
-$$\text{Amount}_{\text{USDT}} = L \cdot (\sqrt{P} - \sqrt{P_l})$$
+$$\text{Amount}_{\text{currency0}} = L \cdot \left( \frac{1}{\sqrt{P}} - \frac{1}{\sqrt{P_u}} \right)$$
+$$\text{Amount}_{\text{currency1}} = L \cdot (\sqrt{P} - \sqrt{P_l})$$

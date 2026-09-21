@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
+import random
 from model.regression.directional_bce_loss import DirectionalBCELoss
 
 class EventConditionedVolatilitySSMCell(nn.Module):
-    def __init__(self, hidden_dim: int):
+    def __init__(self, hidden_dim: int, init_weights: str = 'zeros'):
         super().__init__()
         self.hidden_dim = hidden_dim
         
@@ -21,7 +22,6 @@ class EventConditionedVolatilitySSMCell(nn.Module):
             nn.SiLU(),
             #nn.Dropout(p=0.4),
             nn.Linear(hidden_dim // 2, 1)
-            #nn.Linear(hidden_dim, 1)
         )
         
         # HEAD 2: Predicts Volatility (sigma) -> Must be strictly positive
@@ -32,7 +32,6 @@ class EventConditionedVolatilitySSMCell(nn.Module):
             nn.Linear(hidden_dim, hidden_dim // 2),
             nn.SiLU(),
             nn.Linear(hidden_dim // 2, 1)
-            #nn.Linear(hidden_dim, 1)
         )
         
         # HEAD 3: Predicts Liquidity (as before)
@@ -43,7 +42,6 @@ class EventConditionedVolatilitySSMCell(nn.Module):
             nn.SiLU(),
             #nn.Dropout(p=0.4),
             nn.Linear(hidden_dim // 2, 1)
-            #nn.Linear(hidden_dim, 1)
         )
 
         # --- Net2: Swap Layers & Predictors ---
@@ -54,8 +52,14 @@ class EventConditionedVolatilitySSMCell(nn.Module):
         self.swap_ssm_B = nn.Linear(3, hidden_dim)
 
         # Initialize volatility bias to a realistic daily standard deviation (e.g., 2% -> 0.02)
-        nn.init.zeros_(self.predict_log_volatility[-1].weight)
-        nn.init.constant_(self.predict_log_volatility[-1].bias, 2.0)
+        if init_weights == 'rand':
+            beta = 0.01  # usdc/eth=1.0, eth/usdt=0.01, wbtc/usdc=0.1
+            nn.init.normal_(self.predict_log_volatility[-1].weight, mean=0.0, std=1e-3)
+            nn.init.constant_(self.predict_log_volatility[-1].bias, beta * random.randint(1, 5))  
+        else:
+            nn.init.zeros_(self.predict_log_volatility[-1].weight)
+            nn.init.constant_(self.predict_log_volatility[-1].bias, 2.0)
+
 
     def forward(self, event_type, modify_in, swap_in, hs):
         """
@@ -83,10 +87,6 @@ class EventConditionedVolatilitySSMCell(nn.Module):
         
         # 2. Output volatility (constrained to be strictly positive using ELU)
         pred_log_vol = self.predict_log_volatility(swap_context)
-        #pred_vol = torch.nn.functional.elu(raw_vol, alpha=1.0) + 1.0 + 1e-5
-        # Softplus is strictly positive, smooth, and has active non-zero gradients
-        # Adding 1e-4 prevents absolute zero
-        #pred_vol = torch.nn.functional.softplus(raw_vol) + 1e-4
         pred_vol = torch.exp(pred_log_vol)
         
         # 3. Output Liquidity
@@ -114,14 +114,11 @@ class EventConditionedVolatilitySSMCell(nn.Module):
 
 
 class ECVolatilityPINN(nn.Module):
-    def __init__(self, hidden_dim: int):
+    def __init__(self, hidden_dim: int, init_weights: str = 'zeros'):
         super().__init__()
         self.hidden_dim = hidden_dim
-        self.mamba_cell = EventConditionedVolatilitySSMCell(hidden_dim)
-        ##self.mse = nn.MSELoss()
-        ## Huber Loss acts quadratically for small errors, but linearly for large outliers
+        self.mamba_cell = EventConditionedVolatilitySSMCell(hidden_dim, init_weights=init_weights)
         self.loss_fn = nn.SmoothL1Loss(beta=1e-3)
-        ##self.loss_fn = nn.MSELoss()
         self.direction_loss_fn = DirectionalBCELoss(alpha=50.0)
 
     def forward(self, event_types, modify_seq, stable_swap_seq, raw_swap_seq, 
@@ -181,14 +178,18 @@ class ECVolatilityPINN(nn.Module):
 
                 # Target physical log-volatility: ln(|physical_log_return|)
                 physical_log_vol = torch.log(torch.abs(physical_log_return) + 1e-5)
-                
+
                 # Calculate step_phys_loss (Now natively in log-space!)
-                step_direction_phys_loss = torch.pow(pred_ret - physical_log_return, 2)
+                step_direction_phys_loss = torch.pow(pred_ret - physical_log_return, 2) # MSE
+
                 #step_vol_phys_loss = torch.pow(pred_vol - physical_vol_target, 2)
                 step_vol_phys_loss = torch.pow(pred_log_vol - physical_log_vol, 2)
                 
+                # LAMBDA5: ETH-USDC=1.0,0.01, ETH-USDT=0.1, WBTC-USDC=1.0
+                # LAMBDA6: ETH-USDC=1.0,1.0, ETH-USDT=1.0, WBTC-USDC=1.0
+                LAMBDA5 = 1.0
                 LAMBDA6 = 1.0
-                step_phys_loss = (step_direction_phys_loss + LAMBDA6 * step_vol_phys_loss) * is_swap_step.float()
+                step_phys_loss = (LAMBDA5 * step_direction_phys_loss + LAMBDA6 * step_vol_phys_loss) * is_swap_step.float()
                 physics_loss_accumulator += step_phys_loss.mean()
                 swap_count += 1
 
@@ -213,18 +214,21 @@ class ECVolatilityPINN(nn.Module):
             # Directionality Loss (Sign Penalty)
             loss_r_direction = self.direction_loss_fn(pred_rets_masked, target_rets_masked)
             # Combine return losses (give direction loss a weight factor like 0.1)
-            LAMBDA1 = 100.0
-            LAMBDA2 = 0.1
+            # LAMBDA1: ETH-USDC=1.0, ETH-USDT=10.0, WBTC-USDC=10.0
+            # LAMBDA2: ETH-USDC=0.05,0.1, ETH-USDT=1.0, WBTC-USDC=1.0
+            LAMBDA1 = 1.0
+            LAMBDA2 = 0.05
             loss_r_data = (LAMBDA1 * loss_r_magnitude) + (LAMBDA2 * loss_r_direction)
-            #loss_r_data = loss_r_magnitude
-
             loss_v_data = self.loss_fn(pred_log_vols_masked, target_log_vols_masked)
             loss_l_data = self.loss_fn(pred_log_liqs[mask].view(-1), target_log_l[mask].view(-1))
             
             # Multiply volatility loss by a multiplier (e.g., 10.0 or 50.0)
             # to give its gradients equal "voting power" in the optimizer
-            LAMBDA3 = 10.0
-            total_data_loss = loss_r_data + (LAMBDA3 * loss_v_data) + loss_l_data
+            # LAMBDA3: ETH-USDC=1.0,10.0, ETH-USDT=10.0|50.0, WBTC-USDC=10.0
+            # LAMBDA4: ETH-USDC=1.0, ETH-USDT=1.0|-0.1, WBTC-USDC=1.0
+            LAMBDA3 = 1.0
+            LAMBDA4 = 1.0
+            total_data_loss = loss_r_data + (LAMBDA3 * loss_v_data) + (LAMBDA4 * loss_l_data)
             
             if torch.isnan(total_data_loss):
                 total_data_loss = torch.tensor(0.0, device=device, requires_grad=True)
@@ -237,10 +241,6 @@ class ECVolatilityPINN(nn.Module):
                 physics_loss_accumulator = 0.0
                 mean_physics_loss = 0.0
 
-            #print("total_data_loss:", total_data_loss)
-            #print("mean_physics_loss:", mean_physics_loss)
-
-            #print(mean_physics_loss)
             joint_loss = (lambda_data * total_data_loss) + (lambda_phys * mean_physics_loss)
             
             return joint_loss, total_data_loss, mean_physics_loss

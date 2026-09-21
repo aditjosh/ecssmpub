@@ -136,7 +136,7 @@ SWAP_EVENT_ABI = {
     "type": "event"
 }
 
-UNISWAP_V4_STATEVIEW_ABI = STATEVIEW_ABI = [
+UNISWAP_V4_STATEVIEW_ABI = [
     {
         "inputs": [{"internalType": "PoolId", "name": "poolId", "type": "bytes32"}],
         "name": "getSlot0",

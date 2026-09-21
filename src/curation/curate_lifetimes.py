@@ -7,6 +7,7 @@ from tqdm import tqdm
 from eth_abi import decode
 from eth_utils import to_normalized_address
 import datetime
+import os
 
 # Configuration
 RPC_URL = constants.RPC_URL
@@ -17,9 +18,10 @@ POSITION_MANAGER_ADDR = constants.UNI_POSITION_MANAGER.lower()
 UNI_V4_START_BLOCK = constants.UNI_V4_START_BLOCK
 #START_BLOCK = 24693836
 
-CURRENCY_1_ADDR = constants.WETH_CONTRACT_ADDR.lower()
+CURRENCY_1_ADDR = constants.WBTC_CONTRACT_ADDR.lower()
 CURRENCY_2_ADDR = constants.USDT_CONTRACT_ADDR.lower()
-curr1_curr2 = "eth_usdt"
+# wbtc_usdt, eth_usdt, usdc_eth
+curr1_curr2 = "wbtc_usdt"
 
 # Event Topics
 INIT_SIG = w3.keccak(text="Initialize(bytes32,address,address,uint24,int24,address)").to_0x_hex()
@@ -190,8 +192,6 @@ def sync_liquidity_events(pool_ids, start_block, end_block, chunk_size):
                 # Strip leading zeros
                 sender = padded_sender_addr
             
-                #tick_lower = decode_int24(data_hex[0:64])
-                #tick_upper = decode_int24(data_hex[64:128])
                 #salt = "0x" + data_hex[192:256] # 96 bytes offset = 192 hex chars
                 salt = "0x" + str(salt.hex())
                 token_id = int(salt, 16)
@@ -348,14 +348,41 @@ def topic_debugger(w3):
     except Exception as e:
         print(f"Status: Search failed. Check RPC or POOL_MANAGER address. Error: {e}")
 
+def get_curr_tag(curr1_str, curr2_str):
+    if C0 == CURRENCY_1_ADDR:
+        CURR1_CURR2 = f"{curr1_str}_{curr2_str}"
+    else:
+        CURR1_CURR2 = f"{curr2_str}_{curr1_str}"
+    return CURR1_CURR2
+
+def curate_pool_ids(dir_path, from_block, to_block, curr1_curr2, chunk_size=1000):
+    cp_w3 = Web3(Web3.HTTPProvider(RPC_URL))
+    
+    #print(CURR1_CURR2)
+    # Create the directory safely
+    os.makedirs(dir_path, exist_ok=True)
+    db_file_name = f'{dir_path}/pool_ids_univ4_{curr1_curr2}_{from_block}_to_{to_block}.db'
+
+    # If file exists, return it
+    if os.path.isfile(db_file_name):
+        print("The file already exists.")
+    else:
+        try:
+            data_extractor = DataExtraction(db_file_name)
+            data_extractor.init_database_pool_ids()
+
+            # Identify the Pool Id
+            pools_data = curate_pool_metadata(data_extractor, start_block=from_block, end_block=to_block, chunk_size=chunk_size)
+            print(f"Number of pools: {len(pools_data)}")
+        except Exception as e:
+            print(f"curate_pool_ids: Error executing data extraction: {e}")
+        finally:
+            data_extractor.close()
+
+    return db_file_name
+
 
 if __name__ == "__main__":
-    ##last_n_days = 180
-    
-    w3 = Web3(Web3.HTTPProvider(constants.RPC_URL))
-    topic_debugger(w3)
-    latest_block =  25044360  # 24695825. w3.eth.block_number
-
     # 25044360: considered latest
     # 24430360: 87 days ago
     # 23760360: 181 days ago
@@ -363,26 +390,25 @@ if __name__ == "__main__":
     # 22480360: 360 days ago
     # 21835360: 450 days ago
     # 21191360: 540 days ago
-    past_block = 21191360
-    #past_block = latest_block - (last_n_days * 7100)
-    #past_block = latest_block - 20000
-    print(f"Latest block is {latest_block}")
-    db_name = f'sqldb/{curr1_curr2}/sql_univ4_{curr1_curr2}_{past_block}_to_{latest_block}.db'
+
+    ##last_n_days = 180
     
+    w3 = Web3(Web3.HTTPProvider(constants.RPC_URL))
+    topic_debugger(w3)
+    past_block = 21191360
+    # Check the archive node
     heath_check(w3, past_block)
 
-    # Discover all pools in safe increments
-    ###sync_currency_swap_liq_pools(db_conn, latest_block, chunk_size=2000)
-    
-    
-    # Pool IDs
-    # Option 1: Fetch the PoolIds from the DB to proceed with position tracking
-    #db_conn = setup_db(db_name)
-    #cursor = db_conn.cursor()
-    #cursor.execute('SELECT pool_id FROM ' + TABLE_CURR1_CURR2_V4_POOLS)
+    # Find all pool ids
+    latest_block =  25044360  # 24695825. w3.eth.block_number
+    curr1_str = "wbtc"
+    curr2_str = "usdt"
+    curr1_curr2 = get_curr_tag(curr1_str, curr2_str)
+    dir_path = f'sqldb/{curr1_curr2}/'
+    pool_db_name = curate_pool_ids(dir_path, past_block, latest_block, curr1_curr2)
 
-    # Option 1: Fetch the PoolIds from the separate DB
-    pool_db_name = f'sqldb/{curr1_curr2}/pool_ids_univ4_{curr1_curr2}_21191360_to_25044360.db'
+    # Fetch the PoolIds from the separate DB
+    #pool_db_name = f'sqldb/{curr1_curr2}/pool_ids_univ4_{curr1_curr2}_21191360_to_25044360.db'
     db_conn = setup_db(pool_db_name)
     cursor = db_conn.cursor()
     cursor.execute('SELECT pool_id FROM pools')
@@ -391,12 +417,15 @@ if __name__ == "__main__":
     cursor.close()
     db_conn.close()
 
+    ## Option 1: Get blocks in a specific range
     #process_block_range(db_name, past_block, latest_block, all_pool_ids, chunk_size=1000)
 
-    ## Loop over to extract all data
-    to_blocks = [21835359, 22480359, 23120359, 23760359, 24430359, 25044360]
+    ## Option 2: Loop over to extract all blocks
+    #to_blocks = [21835359]
+    #from_blocks = [21191360]
     from_blocks = [21191360, 21835360, 22480360, 23120360, 23760360, 24430360]
+    to_blocks = [21835359, 22480359, 23120359, 23760359, 24430359, 25044360]
     for i in range(len(to_blocks)):
-        db_name = f'sqldb/{curr1_curr2}/sql_univ4_{curr1_curr2}_{from_blocks[i]}_to_{to_blocks[i]}.db'
+        db_name = f'sqldb/{curr1_curr2}/lifetime/sql_univ4_{curr1_curr2}_{from_blocks[i]}_to_{to_blocks[i]}.db'
         process_block_range(db_name, from_blocks[i], to_blocks[i], all_pool_ids, chunk_size=2000)
         time.sleep(120)

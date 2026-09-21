@@ -59,19 +59,20 @@ def seed_everything(seed: int):
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
 
-def build_ensemble_member(member_id: int, hidden_dim: int = 64, base_seed: int = 42):
+def build_ensemble_member(member_id: int, hidden_dim: int = 64, base_seed: int = 42, init_weights: str = 'zeros'):
     # Generate a unique, deterministic seed per ensemble member
     member_seed = base_seed + (member_id * 1000)
     seed_everything(member_seed)
     
     # Instantiate model - parameters will be randomly initialized differently
-    model = ECVolatilityPINN(hidden_dim=hidden_dim)
+    model = ECVolatilityPINN(hidden_dim=hidden_dim, init_weights=init_weights)
     return model, member_seed
 
-def train_time_stream(train_dataloader, num_epochs, model_ensemble_id=1):
+def train_time_stream(train_dataloader, num_epochs, model_ensemble_id=1, init_weights = 'zeros', ablation=False):
     # Model
     device = torch.device("cpu")
     HIDDEN_DIM = 128
+    ## LAMBDA_PHYS = 0.5 (usdc/eth, eth/usdt, wbtc/usdc)
     LAMBDA_PHYS = 0.5
     LAMBDA_DATA = 1.0
     early_stopper = EarlyStopper(patience=4)
@@ -83,7 +84,8 @@ def train_time_stream(train_dataloader, num_epochs, model_ensemble_id=1):
     else:
         device = torch.device("cpu")
     print(f'Using device: {device}')
-    model, member_seed = build_ensemble_member(member_id=model_ensemble_id, hidden_dim=HIDDEN_DIM, base_seed=42)
+    model, member_seed = build_ensemble_member(member_id=model_ensemble_id, 
+                            hidden_dim=HIDDEN_DIM, base_seed=42, init_weights=init_weights)
     model = model.to(device)
 
     # Training Loop
@@ -94,7 +96,14 @@ def train_time_stream(train_dataloader, num_epochs, model_ensemble_id=1):
     print(f'Training for {num_epochs} epochs...')
     for epoch in range(num_epochs + 1):
         current_lambda_data = LAMBDA_DATA
-        current_lambda_phys = LAMBDA_PHYS * min(1.0, epoch / 5.0)
+
+        if ablation:
+            ## Ablation: current_lambda_phys = 0
+            current_lambda_phys = 0
+        else:
+            current_lambda_phys = LAMBDA_PHYS * min(1.0, epoch / 5.0)
+            
+
         for batch_idx, batch in enumerate(train_dataloader):
             start_time = time.perf_counter()
 
@@ -134,15 +143,6 @@ def train_time_stream(train_dataloader, num_epochs, model_ensemble_id=1):
                 current_lambda_phys
             )
 
-            #if epoch < 2:
-            #    lambda_phys_current = 0.0  # Let the model learn raw prices first
-            #elif epoch < 4:
-            #    lambda_phys_current = lambda_phys * 0.1  # Introduce physics softly
-            #else:
-            #    lambda_phys_current = lambda_phys  # Apply full physics constraints
-
-            #lambda_phys_current = LAMBDA_PHYS
-
             # Skip anomalous update bursts entirely
             if torch.isnan(joint_loss) or torch.isinf(joint_loss):
                 print("Warning: Corrupted loss matrix detected. Skipping training step optimization cycle.")
@@ -155,9 +155,6 @@ def train_time_stream(train_dataloader, num_epochs, model_ensemble_id=1):
             vol_weight_grad = model.mamba_cell.predict_log_volatility[-1].weight.grad
             vol_bias_grad = model.mamba_cell.predict_log_volatility[-1].bias.grad
 
-            #print(f"Volatility Head Weight Grad Norm: {vol_weight_grad.norm().item():.8f}")
-            #print(f"Volatility Head Bias Grad Norm:   {vol_bias_grad.norm().item():.8f}")
-
             # Final protective safety net against gradient explosions
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
@@ -166,7 +163,7 @@ def train_time_stream(train_dataloader, num_epochs, model_ensemble_id=1):
             #print(f"Batch processed in {batch_time:.2f} seconds\n")
 
             if batch_idx % 10 == 0:
-                print(f"Epoch {epoch}, Batch {batch_idx}, Loss: {joint_loss.item():.4f}")
+                print(f"Epoch {epoch}, Batch {batch_idx}, Joint Loss: {joint_loss.item():.4f}")
 
             if batch_idx == 0:
                 print(f"--- EPOCH {epoch} BATCH 0 DIAGNOSTICS ---")
@@ -221,9 +218,6 @@ def evaluate_price_accuracy(model, dataloader, device, decimal0=6, decimal1=18):
             mod_liquidity_features = mod_liquidity_features.to(device, non_blocking=True)
             stable_swap_features = stable_swap_features.to(device, non_blocking=True)
             current_prices = current_prices.to(device, non_blocking=True)
-            #target_returns = target_returns.to(device, non_blocking=True)
-            #target_vols = target_vols.to(device, non_blocking=True)
-            #target_log_l = target_log_l.to(device, non_blocking=True)
 
             # Keep a clean copy of the raw inputs for the physics evaluation
             raw_swap_features = raw_swap_features
@@ -239,8 +233,6 @@ def evaluate_price_accuracy(model, dataloader, device, decimal0=6, decimal1=18):
 
             pred_vols = np.asarray(pred_vols.cpu(), dtype=np.float64)
             target_vols = np.asarray(target_vols.cpu(), dtype=np.float64)
-
-            #pred_log_liqs = np.asarray(pred_log_liqs.cpu(), dtype=np.float64)
 
             #print(f"Shape:              {target_log_prices_ground_truth.shape}")
             #print(f"Total Elements:     {target_log_prices_ground_truth.size}")
@@ -258,15 +250,6 @@ def evaluate_price_accuracy(model, dataloader, device, decimal0=6, decimal1=18):
             mask = mask.cpu().numpy()
             
             if mask.sum() > 0:
-                # Hard-limit the log predictions before exponentiating 
-                # This prevents exp(pred) from hitting 'inf'
-                #pred_log_capped = np.clip(pred_log_prices, -50.0, 50.0)
-                #target_log_capped = target_log_prices_ground_truth
-
-                # Exponential back-transformation out of Log-Space
-                #pred_raw_prices = np.exp(pred_log_prices)
-                #target_raw_prices_ground_truth = np.exp(target_log_capped)
-                
                 # Extract only the valid swap steps and move to CPU
                 all_raw_preds.extend(pred_vols[mask])
                 all_raw_targets.extend(target_vols[mask])
@@ -278,7 +261,6 @@ def evaluate_price_accuracy(model, dataloader, device, decimal0=6, decimal1=18):
                 target_signs = torch.sign(target_returns[mask]).to(device, non_blocking=True)
 
                 correct_directions = (predicted_signs == target_signs).float().mean().item()
-                #print(f"Current Epoch Directional Accuracy: {correct_directions * 100:.2f}%")
                 all_correct_directions.append(correct_directions)
 
     pred_vols_raw = np.array(all_raw_preds)
@@ -286,14 +268,6 @@ def evaluate_price_accuracy(model, dataloader, device, decimal0=6, decimal1=18):
 
     all_pred_rets = np.array(all_pred_rets)
     all_target_rets = np.array(all_target_rets)
-
-    # 2. Convert raw EVM sqrtPriceX96 vectors into human-readable pool prices
-    # (Price of Token 0 denominated in terms of Token 1)
-    #decimal_adjustment = 10 ** (decimal0 - decimal1)
-
-    # Force the arrays to be completely flat 1D vectors
-    #preds_human = ((pred_prices_raw) * decimal_adjustment).flatten()
-    #targets_human = ((target_prices_raw) * decimal_adjustment).flatten()
 
     print("target_vols_raw contains NaN:", np.isnan(target_vols_raw).any())
     print("pred_vols_raw contains Inf:", np.isinf(pred_vols_raw).any())
@@ -323,7 +297,7 @@ def evaluate_price_accuracy(model, dataloader, device, decimal0=6, decimal1=18):
     mape_rets = np.mean(np.abs(all_target_rets[valid_mask] - all_pred_rets[valid_mask]) / (all_target_rets[valid_mask] + epsilon)) * 100
 
     print("="*40)
-    print("      ACCURACY REPORT      ")
+    print("      ACCURACY REPORT - VALIDATION SET     ")
     print("="*40)
     print(f"Total Swap Events Evaluated: {len(target_vols)}")
     print(f"Mean Absolute Error (MAE):   {mae_usd:.4f}")
@@ -352,7 +326,7 @@ def eval_model(model, val_dataloader):
     for i in integers:
         diff = pred_vols[i] - target_vols[i]
         pct = (diff / target_vols[i]) * 100
-        print(f"True: {target_vols[i]:.4f} | Pred: {pred_vols[i]} | Delta: {diff:.6f} ({pct:.4f}%)")
+        print(f"True vol: {target_vols[i]:.4f} | Pred vol: {pred_vols[i]} | Delta: {diff:.6f} ({pct:.4f}%)")
 
 ### Data trend
 def test_data_trend(dataloader):
@@ -391,20 +365,24 @@ def test_data_trend(dataloader):
 
 # --- Example Usage ---
 if __name__ == "__main__":
-    db_file = "../analysis/sqldb/usdc_eth/usdc_eth_univ4_timeline.db"
-    #train_dataloader, val_dataloader = create_sliding_window_sequence_dataloaders(
-    #    db_file, table_name="timeline", window_size=100, vol_window=30, train_chunk_size=5000, val_chunk_size=5000)
-
     MODEL_NUMBER = 5
+    MODEL_TAG = ''
+    NUM_EPOCHS = 6
     WINDOW_SIZE = 100
+    init_weights = 'zeros'     # 'rand','zeros' for not computing uncertainty
+    is_ablation = False
+    TOKENS_TAG = 'usdc_eth'
+    db_file = f"../analysis/sqldb/{TOKENS_TAG}/{TOKENS_TAG}_univ4_timeline.db"
+
     train_dataloader, val_dataloader = create_sliding_window_sequence_dataloaders_for_ensemble(
         db_file, table_name="timeline", window_size=WINDOW_SIZE, vol_window=30, train_chunk_size=6000, 
         val_chunk_size=5000, member_seed=MODEL_NUMBER * 100)
     
     # Train
-    model = train_time_stream(train_dataloader, num_epochs=2, model_ensemble_id=MODEL_NUMBER)
+    model = train_time_stream(train_dataloader, num_epochs=NUM_EPOCHS, model_ensemble_id=MODEL_NUMBER, 
+                            init_weights=init_weights, ablation=is_ablation)
     ## Save the model's state dictionary
-    torch.save(model.state_dict(), f"trained/model_{MODEL_NUMBER}_128_ws{WINDOW_SIZE}_weights.pth")
+    torch.save(model.state_dict(), f"trained/{TOKENS_TAG}/model_{MODEL_NUMBER}{MODEL_TAG}_128_ws{WINDOW_SIZE}_weights.pth")
 
     # Evaluate
     eval_model(model, val_dataloader)

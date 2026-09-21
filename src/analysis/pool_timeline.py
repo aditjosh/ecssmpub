@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 from decimal import Decimal, getcontext
 import math
+import argparse
 
 """
 Merge the liquidity and fee_and_price tables to create a timeline table that contains events of 
@@ -154,7 +155,17 @@ def combine_consecutive_mod_liquidity():
         ORDER BY datetime;
     """)
 
-def add_train_val_split_column(db_path):
+def check_split(db_path, split_type):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Count records
+    cursor.execute(f"SELECT COUNT(id) FROM timeline where split = {split_type}")
+    total_size = cursor.fetchone()[0]
+    conn.close()
+    print("Total count: ", total_size)
+
+def add_train_val_split_col(db_path):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 
@@ -165,7 +176,7 @@ def add_train_val_split_column(db_path):
     train_size = total_size - val_size
 
     # Add the new 'split' column
-    #cursor.execute("ALTER TABLE timeline ADD COLUMN split INTEGER")
+    cursor.execute("ALTER TABLE timeline ADD COLUMN split INTEGER")
 
     # Initialize all rows to 0
     cursor.execute("UPDATE timeline SET split = 0")
@@ -203,8 +214,10 @@ def add_train_val_split_col2(db_path):
     )
     UPDATE timeline
     SET split = CASE 
+        --- Suppose dataset has N records. Find a,b: 0.2N = a x b. If N is odd number, take a multiple of 10 close to N.
+        --- Then OrderedData.row_num % (b/0.2) < b
         -- 97 chunks of 2442 records = 236874 records total (20%)
-        WHEN (OrderedData.row_num % 12210) < 2442 THEN 1 
+        WHEN (OrderedData.row_num % 5050) < 1000 THEN 1 
         ELSE 0 
     END
     FROM OrderedData
@@ -217,6 +230,19 @@ def add_train_val_split_col2(db_path):
     conn.close()
     print("Done!")
 
+def remove_none_price(db_path):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+       UPDATE timeline
+       SET sqrt_price_x96 = '0.000000000001' 
+       WHERE sqrt_price_x96 == '000000000001';
+    """)
+
+    conn.commit()
+    conn.close()
+    print("Done!")
+    
 
 def consolidate_timelines(db_files, output_path):
     table_name = 'timeline'
@@ -239,21 +265,40 @@ def consolidate_timelines(db_files, output_path):
                 new_conn.close()
                 print("Done!")
 
-    
+def main(output_path: str, op: str = 'noop', tag: str = 'wbtc_usdc'):
+    TAG = tag
+    db_files = [
+        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_21191360_to_21835359.db",
+        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_21835360_to_22480359.db",
+        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_22480360_to_23120359.db",
+        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_23120360_to_23760359.db",
+        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_23760360_to_24430359.db",
+        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_24430360_to_25044360.db",
+    ]
+
+    if op == 'consolidate_timelines':
+        consolidate_timelines(db_files, output_path)
+    elif op == 'remove_none_price':
+        remove_none_price(output_path)
+    elif op == 'train_val_split':
+        add_train_val_split_col2(output_path)
+    elif op == 'check_split':
+        check_split(db_path=output_path, split_type=1)
+    else:
+        print('No operation done!')
+
 
 if __name__ == "__main__":
-    db_files = [
-        "../curation/sqldb/wbtc_usdc/" + "swaps_univ4_wbtc_usdc_21191360_to_21835359.db",
-        "../curation/sqldb/wbtc_usdc/" + "swaps_univ4_wbtc_usdc_21835360_to_22480359.db",
-        "../curation/sqldb/wbtc_usdc/" + "swaps_univ4_wbtc_usdc_22480360_to_23120359.db",
-        "../curation/sqldb/wbtc_usdc/" + "swaps_univ4_wbtc_usdc_23120360_to_23760359.db",
-        "../curation/sqldb/wbtc_usdc/" + "swaps_univ4_wbtc_usdc_23760360_to_24430359.db",
-        "../curation/sqldb/wbtc_usdc/" + "swaps_univ4_wbtc_usdc_24430360_to_25044360.db",
-    ]
-    output_path = 'sqldb/wbtc_usdc/wbtc_usdc_univ4_timeline.db'
-    consolidate_timelines(db_files, output_path)
-
-
-    #add_train_val_split_col2(output_path)
+    
+    tag = 'wbtc_usdc'
+    output_path = f'sqldb/{tag}/{tag}_univ4_timeline.db'
+    
+    parser = argparse.ArgumentParser(description="CLI options")
+    parser.add_argument("-p", "--operation", type=str, default='noop', help="Operation to perform")
+    # Parse the arguments from the command line
+    args = parser.parse_args()
+    
+    # Pass the arguments directly into your main function
+    main(output_path=output_path, op=args.operation, tag=tag)
 
 

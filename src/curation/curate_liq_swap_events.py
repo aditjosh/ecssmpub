@@ -1,6 +1,7 @@
 import math
 from web3 import Web3
 import json
+import os
 import sqlite3
 import time
 import constants
@@ -24,8 +25,8 @@ POOL_MANAGER_ADDR = constants.UNI_POOL_MANAGER.lower()
 POSITION_MANAGER_ADDR = constants.UNI_POSITION_MANAGER.lower()
 CURRENCY_1_ADDR = constants.WBTC_CONTRACT_ADDR.lower()
 CURRENCY_1_DECIMAL_SCALE = constants.WBTC_DECIMAL_SCALE
-CURRENCY_2_ADDR = constants.USDC_CONTRACT_ADDR.lower()
-CURRENCY_2_DECIMAL_SCALE = constants.USDC_DECIMAL_SCALE
+CURRENCY_2_ADDR = constants.USDT_CONTRACT_ADDR.lower()
+CURRENCY_2_DECIMAL_SCALE = constants.USDT_DECIMAL_SCALE
 DSCALE = CURRENCY_1_DECIMAL_SCALE - CURRENCY_2_DECIMAL_SCALE
 C0, C1 = (CURRENCY_1_ADDR, CURRENCY_2_ADDR) if int(CURRENCY_1_ADDR, 16) < int(CURRENCY_2_ADDR, 16) else (CURRENCY_2_ADDR, CURRENCY_1_ADDR)
 
@@ -582,7 +583,7 @@ def call_json_rpc(cp_w3, pool_id, function_name, params=None):
     POOL_MANAGER = constants.UNI_POOL_MANAGER  # mainnet
     state_view_addr = Web3.to_checksum_address(constants.UNI_V4_STATE_VIEW_CONTRACT)   # mainnet
     ## Use the StateView contract (a read-only helper deployed by Uniswap).
-    #state_view = cp_w3.eth.contract(address=state_view_addr, abi=constants.STATEVIEW_ABI)
+    #state_view = cp_w3.eth.contract(address=state_view_addr, abi=constants.UNISWAP_V4_STATEVIEW_ABI)
     data = None
     if function_name == "getSlot0":
         selector = cp_w3.keccak(text="getSlot0(bytes32)")[:4].hex()
@@ -853,11 +854,11 @@ def curate_positions(from_block, to_block, curr1_str, curr2_str, pool_id = None,
     # Single pool_id specified
     if pool_id:
         pools_data = [[pool_id]]
-        output_file_name = f'sqldb/{CURR1_CURR2}/swaps_{pool_id[:5]}_univ4_{CURR1_CURR2}_{START_BLOCK}_to_{END_BLOCK}.db'
+        output_file_name = f'sqldb/{CURR1_CURR2}/pool/swaps_{pool_id[:5]}_univ4_{CURR1_CURR2}_{START_BLOCK}_to_{END_BLOCK}.db'
         data_extractor = DataExtraction(output_file_name)
         data_extractor.init_database_fees_liquidity()
     else:
-        output_file_name = f'sqldb/{CURR1_CURR2}/swaps_univ4_{CURR1_CURR2}_{START_BLOCK}_to_{END_BLOCK}.db'
+        output_file_name = f'sqldb/{CURR1_CURR2}/pool/swaps_univ4_{CURR1_CURR2}_{START_BLOCK}_to_{END_BLOCK}.db'
         print(f"Output file name: {output_file_name}")
         data_extractor = DataExtraction(output_file_name)
         data_extractor.init_database_fees_liquidity()
@@ -896,40 +897,43 @@ def curate_positions(from_block, to_block, curr1_str, curr2_str, pool_id = None,
     finally:
         data_extractor.close()
 
-def curate_pool_ids(from_block, to_block, curr1_str, curr2_str, chunk_size=1000):
-    cp_w3 = Web3(Web3.HTTPProvider(RPC_URL))
+def get_curr_tag(curr1_str, curr2_str):
     if C0 == CURRENCY_1_ADDR:
         CURR1_CURR2 = f"{curr1_str}_{curr2_str}"
     else:
         CURR1_CURR2 = f"{curr2_str}_{curr1_str}"
+    return CURR1_CURR2
 
-    print(CURR1_CURR2)
-
-    db_file_name = f'sqldb/{CURR1_CURR2}/pool_ids_univ4_{CURR1_CURR2}_{from_block}_to_{to_block}.db'
+def curate_pool_ids(dir_path, from_block, to_block, curr1_curr2, chunk_size=1000):
+    cp_w3 = Web3(Web3.HTTPProvider(RPC_URL))
     
-    try:
-        data_extractor = DataExtraction(db_file_name)
-        data_extractor.init_database_pool_ids()
+    #print(CURR1_CURR2)
+    # Create the directory safely
+    os.makedirs(dir_path, exist_ok=True)
+    db_file_name = f'{dir_path}/pool_ids_univ4_{curr1_curr2}_{from_block}_to_{to_block}.db'
 
-        # Identify the Pool Id
-        pools_data = curate_pool_metadata(data_extractor, start_block=from_block, end_block=to_block, chunk_size=chunk_size)
-        print(f"Number of pools: {len(pools_data)}")
-    except Exception as e:
-        print(f"curate_pool_ids: Error executing data extraction: {e}")
-    finally:
-        data_extractor.close()
+    # If file exists, return it
+    if os.path.isfile(db_file_name):
+        print("The file already exists.")
+    else:
+        try:
+            data_extractor = DataExtraction(db_file_name)
+            data_extractor.init_database_pool_ids()
+
+            # Identify the Pool Id
+            pools_data = curate_pool_metadata(data_extractor, start_block=from_block, end_block=to_block, chunk_size=chunk_size)
+            print(f"Number of pools: {len(pools_data)}")
+        except Exception as e:
+            print(f"curate_pool_ids: Error executing data extraction: {e}")
+        finally:
+            data_extractor.close()
+
+    return db_file_name
 
 def decode_ticks_liquidity():
-    ##pool_id = "0xf6e8088529094bc485561fa2a03e3d19c9a60f5d99a997e8fe16ab4ca2db277a"   #### works!
     cp_w3 = Web3(Web3.HTTPProvider(RPC_URL))
     pool_id = "0xa138ea2e4e2dd14d6de99cde73303640db3044b362ec3606ba8c18d91cac0c3f"
     slot0_result = check_pool_exists(cp_w3, pool_id)
-
-    ##get_tick_info(cp_w3, pool_id, [pool_id, 0])
-
-    ##word_pos = -198000 >> 8
-    ##word = get_tick_bitmap(cp_w3, pool_id, [pool_id, word_pos])
-
     sqrt_price, tick, protocol_fee, lp_fee = cp_w3.codec.decode(
         ['uint160', 'int24', 'uint24', 'uint24'],
         bytes.fromhex(slot0_result[2:])
@@ -978,9 +982,6 @@ def is_pool_inactive(pool_id: str):
 
 
 if __name__ == "__main__":
-    ##status, msg = is_pool_inactive(pool_id)
-    ##print(msg)
-
     # 25044360: considered latest
     # 24430360: 87 days ago
     # 23760360: 181 days ago
@@ -989,30 +990,29 @@ if __name__ == "__main__":
     # 21835360: 450 days ago
     # 21191360: 540 days ago
 
-    to_block = 22480360 - 1
-    from_block = 21835360
-    #removal_tx = find_liquidity_removal_time(pool_id, from_block, to_block)
-    #print(f"Liquidity removal transaction: {removal_tx}")
-    ##active_positions = get_liquidity_providers(pool_id, from_block, to_block, chunk_size=2000)
+    w3 = Web3(Web3.HTTPProvider(constants.RPC_URL))
+    topic_debugger(w3)
+    past_block = 21191360
+    # Check the archive node
+    heath_check(w3, past_block)
+
+    # Find all pool ids
+    latest_block =  25044360  # 24695825. w3.eth.block_number
+    dir_path = f'sqldb/{curr1_curr2}/'
+    pool_db_name = curate_pool_ids(dir_path, past_block, latest_block, curr1_curr2, chunk_size=2000)
 
     ## Curate liquidity ticks, swaps, etc.
     curr1_str = "wbtc" 
-    curr2_str = "usdc"
-    tag = curr1_str + "_" +  curr2_str
-    ##curate_positions(from_block, to_block, curr1_str, curr2_str, pool_ids_db_file = f"sqldb/{tag}/pool_ids_univ4_{tag}_21191360_to_25044360.db")
+    curr2_str = "usdt"
+    tag = get_curr_tag(curr1_str, curr2_str)
 
+    # Option 1: Specific block range
+    #curate_positions(from_block, to_block, curr1_str, curr2_str, pool_ids_db_file = f"sqldb/{tag}/pool_ids_univ4_{tag}_21191360_to_25044360.db")
 
-    ## Loop over to extract all data
-    to_blocks = [23120359, 23760359, 24430359, 25044360]
-    from_blocks = [22480360, 23120360, 23760360, 24430360]
+    ## Option 2: Loop over to extract all data
+    from_blocks = [21191360, 21835360, 22480360, 23120360, 23760360, 24430360]
+    to_blocks = [21835359, 22480359, 23120359, 23760359, 24430359, 25044360]
     for i in range(len(to_blocks)):
-        curate_positions(from_blocks[i], to_blocks[i], curr1_str, curr2_str, pool_ids_db_file = f"sqldb/{tag}/pool_ids_univ4_{tag}_21191360_to_25044360.db")
+        curate_positions(from_blocks[i], to_blocks[i], curr1_str, curr2_str, pool_ids_db_file = pool_db_name)
         time.sleep(120)
 
-    
-    #pool_id = "0xf6e8088529094bc485561fa2a03e3d19c9a60f5d99a997e8fe16ab4ca2db277a"
-    ##curate_positions(from_block, to_block, curr1_str, curr2_str, pool_id = "0xf6e8088529094bc485561fa2a03e3d19c9a60f5d99a997e8fe16ab4ca2db277a")
-    
-
-    ## Curate pool ids only
-    #curate_pool_ids(from_block, to_block, curr1_str, curr2_str, chunk_size=2000)

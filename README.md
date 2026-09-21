@@ -21,7 +21,7 @@ $$
 
 ## Framework
 <div align="center">
-    <img src="images/lpsc_main.png" width="600" height="400">
+    <img src="images/lp_sev_main.png" width="600" height="400">
 </div>
 
 ## Code Layout

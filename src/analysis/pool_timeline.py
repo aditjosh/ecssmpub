@@ -14,7 +14,7 @@ CONSOLIDATED_INSERT_TIMELINE_QUERY = """
             id INTEGER PRIMARY KEY,
             block_ts_utc TEXT,
             event_type TEXT,
-            pool_id TEXT,
+            pool_id BLOB,
             sqrt_price_x96 TEXT,
             delta_liquidity TEXT,
             tick_lower INTEGER,
@@ -73,7 +73,7 @@ def merge_tables(db_path):
             id INTEGER PRIMARY KEY,
             block_ts_utc TEXT,
             event_type TEXT,
-            pool_id TEXT,
+            pool_id BLOB,
             sqrt_price_x96 TEXT,
             delta_liquidity TEXT,
             tick_lower INTEGER,
@@ -108,7 +108,7 @@ def combine_consecutive_mod_liquidity():
         CREATE TABLE IF NOT EXISTS timeline_aggregated (
             block_ts_utc TEXT,
             event_type TEXT,
-            pool_id TEXT,
+            pool_id BLOB,
             sqrt_price_x96 TEXT,
             delta_liquidity TEXT,
             tick_lower INTEGER,
@@ -155,6 +155,7 @@ def combine_consecutive_mod_liquidity():
         ORDER BY datetime;
     """)
 
+
 def check_split(db_path, split_type):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -165,46 +166,8 @@ def check_split(db_path, split_type):
     conn.close()
     print("Total count: ", total_size)
 
+
 def add_train_val_split_col(db_path):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-
-    # Count records
-    cursor.execute("SELECT COUNT(id) FROM timeline")
-    total_size = cursor.fetchone()[0]
-    val_size = int(0.2 * total_size)          # e.g., 20% for validation
-    train_size = total_size - val_size
-
-    # Add the new 'split' column
-    cursor.execute("ALTER TABLE timeline ADD COLUMN split INTEGER")
-
-    # Initialize all rows to 0
-    cursor.execute("UPDATE timeline SET split = 0")
-
-    # Randomly assign val_sizerows to 1
-    print(f"Setting {val_size} validation data")
-    #cursor.execute("""
-    #    UPDATE timeline 
-    #    SET split = 1
-    #    WHERE rowid IN (
-    #        SELECT id 
-    #        FROM timeline 
-    #        ORDER BY RANDOM() 
-    #        LIMIT ?
-    #    )
-    #""", (val_size,))
-
-    cursor.execute("""
-       UPDATE timeline
-       SET split = 1
-       WHERE block_ts_utc > '2026-02-23 00:00:00';
-    """)
-
-    conn.commit()
-    conn.close()
-    print("Done!")
-
-def add_train_val_split_col2(db_path):
     query = """
     WITH OrderedData AS (
     SELECT 
@@ -268,20 +231,18 @@ def consolidate_timelines(db_files, output_path):
 def main(output_path: str, op: str = 'noop', tag: str = 'wbtc_usdc'):
     TAG = tag
     db_files = [
-        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_21191360_to_21835359.db",
-        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_21835360_to_22480359.db",
-        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_22480360_to_23120359.db",
-        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_23120360_to_23760359.db",
-        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_23760360_to_24430359.db",
-        f"../curation/sqldb/{TAG}/" + f"swaps_univ4_{TAG}_24430360_to_25044360.db",
+        f"../curation/sqldb/{TAG}/pool/" + f"swaps_univ4_{TAG}_21191360_to_21835359.db",
+        f"../curation/sqldb/{TAG}/pool/" + f"swaps_univ4_{TAG}_21835360_to_22480359.db",
+        f"../curation/sqldb/{TAG}/pool/" + f"swaps_univ4_{TAG}_22480360_to_23120359.db",
+        f"../curation/sqldb/{TAG}/pool/" + f"swaps_univ4_{TAG}_23120360_to_23760359.db",
+        f"../curation/sqldb/{TAG}/pool/" + f"swaps_univ4_{TAG}_23760360_to_24430359.db",
+        f"../curation/sqldb/{TAG}/pool/" + f"swaps_univ4_{TAG}_24430360_to_25044360.db",
     ]
 
     if op == 'consolidate_timelines':
         consolidate_timelines(db_files, output_path)
-    elif op == 'remove_none_price':
-        remove_none_price(output_path)
     elif op == 'train_val_split':
-        add_train_val_split_col2(output_path)
+        add_train_val_split_col(output_path)
     elif op == 'check_split':
         check_split(db_path=output_path, split_type=1)
     else:
